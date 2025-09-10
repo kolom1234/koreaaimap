@@ -1,358 +1,485 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>서울 실시간 도시데이터 — 데모</title>
-  <!-- Tailwind (CDN) -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-  <style>
-    :root { --brand: linear-gradient(90deg,#6366f1 0%,#7c3aed 50%,#06b6d4 100%); }
-    html,body{height:100%;background:#0b1020;color:#0f172a;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Apple SD Gothic Neo,Arial;}
-    .glass { backdrop-filter:saturate(180%) blur(10px); background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); }
-    .chip { padding:.35rem .65rem;border-radius:999px;border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06); font-size:.85rem; }
-    .chip.active { border-color:rgba(99,102,241,.7); box-shadow:0 0 0 2px rgba(99,102,241,.25) inset; }
-    .legend-dot{width:10px;height:10px;border-radius:999px;display:inline-block;margin-right:6px}
-    .shadow-soft{box-shadow:0 10px 25px rgba(0,0,0,.25)}
-    /* map */
-    #map{height:62vh; border-radius:18px; overflow:hidden}
-    .leaflet-control-container .leaflet-top.leaflet-left{margin-top:70px} /* avoid header */
-    /* graceful scroll */
-    *{scroll-behavior:smooth}
-  </style>
-  <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- Heatmap plugin -->
-  <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
-  <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-</head>
-<body class="text-slate-100">
-  <!-- Header -->
-  <header class="sticky top-0 z-40 shadow-soft" style="background:var(--brand)">
-    <div class="max-w-6xl mx-auto px-5 py-3 flex flex-wrap items-center gap-3">
-      <div class="flex items-center gap-3">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M12 2l9 4.5v10L12 21 3 16.5v-10L12 2Z" fill="white" opacity=".85"/></svg>
-        <h1 class="text-lg md:text-xl font-semibold">서울 실시간 도시데이터 · 데모</h1>
-      </div>
-      <div class="ml-auto flex items-center gap-2">
-        <!-- hotspot selector -->
-        <label class="sr-only" for="hotspotSel">관심 지역</label>
-        <select id="hotspotSel" class="glass rounded-xl px-3 py-2 text-sm text-white/90">
-          <option>어린이대공원</option>
-          <option>여의도한강공원</option>
-          <option>서울숲</option>
-        </select>
-        <div id="weatherChip" class="chip">☀️ 28.6°C</div>
-        <a href="#about" class="chip hover:bg-white/10">ℹ️ 안내</a>
-      </div>
-      <div class="w-full"></div>
-      <!-- category chips -->
-      <div class="flex gap-2 flex-wrap">
-        <button data-layer="population" class="chip active">👥 인구</button>
-        <button data-layer="congestion" class="chip active">🌡 혼잡도(히트)</button>
-        <button data-layer="parking" class="chip">🅿️ 주차</button>
-        <button data-layer="cctv" class="chip">📹 CCTV</button>
-        <button data-layer="bike" class="chip">🚲 따릉이</button>
-        <button data-layer="subway" class="chip">🚇 지하철</button>
-      </div>
-    </div>
-  </header>
-
-  <!-- Main -->
-  <main class="max-w-6xl mx-auto px-4 pt-4 pb-24">
-    <!-- map + side tools -->
-    <section class="relative">
-      <div id="map" class="shadow-soft"></div>
-
-      <!-- Map style switch -->
-      <div class="absolute top-4 right-4 glass rounded-xl p-2 flex flex-col gap-2">
-        <span class="text-xs text-white/70 px-2 pt-1">지도 스타일</span>
-        <button class="chip" data-style="auto">자동</button>
-        <button class="chip" data-style="dark">야간</button>
-        <button class="chip" data-style="gray">흑백</button>
-      </div>
-
-      <!-- mini legend -->
-      <div class="absolute bottom-4 right-4 glass rounded-xl p-3 text-xs">
-        <div class="mb-1 font-semibold text-white/90">혼잡도 레전드</div>
-        <div><span class="legend-dot" style="background:#22c55e"></span>여유</div>
-        <div><span class="legend-dot" style="background:#f59e0b"></span>보통</div>
-        <div><span class="legend-dot" style="background:#ef4444"></span>붐빔</div>
-      </div>
-    </section>
-
-    <!-- info panel -->
-    <section class="mt-6 grid md:grid-cols-3 gap-4">
-      <!-- big card -->
-      <article class="md:col-span-2 glass rounded-2xl p-5">
-        <div class="flex flex-wrap items-end gap-3">
-          <h2 id="titleNow" class="text-xl font-bold">지금 어린이대공원은</h2>
-          <span id="statusBadge" class="chip">보통</span>
-          <span id="updatedAt" class="text-white/60 text-sm">—</span>
-        </div>
-        <div class="grid sm:grid-cols-3 gap-4 mt-4">
-          <div class="glass rounded-xl p-4">
-            <div class="text-sm text-white/60">실시간 인구(추정)</div>
-            <div id="peopleNow" class="text-2xl font-bold mt-1">—</div>
-            <div id="stayTime" class="text-white/60 text-sm mt-1">예상 체류 2시간</div>
-          </div>
-          <div class="glass rounded-xl p-4">
-            <div class="text-sm text-white/60">혼잡 지수</div>
-            <div id="congestionScore" class="text-2xl font-bold mt-1">—</div>
-            <div id="changeRate" class="text-white/60 text-sm mt-1">전일 대비 —</div>
-          </div>
-          <div class="glass rounded-xl p-4">
-            <div class="text-sm text-white/60">교통 속도</div>
-            <div id="trafficSpeed" class="text-2xl font-bold mt-1">—</div>
-            <div class="text-white/60 text-sm mt-1">대중교통/차/도보 평균</div>
-          </div>
-        </div>
-
-        <div class="mt-6">
-          <canvas id="chart" height="120"></canvas>
-          <div class="text-white/60 text-xs mt-2">※ 본 화면은 데모로, 데이터는 모의 값입니다.</div>
-        </div>
-      </article>
-
-      <!-- details -->
-      <aside class="glass rounded-2xl p-5">
-        <h3 class="font-semibold text-lg mb-3">주요 지점</h3>
-        <ul id="poiList" class="space-y-2 text-sm"></ul>
-        <hr class="border-white/10 my-4">
-        <h3 class="font-semibold text-lg mb-3">필터</h3>
-        <div class="flex flex-wrap gap-2">
-          <span class="chip">가족친화</span>
-          <span class="chip">피크닉</span>
-          <span class="chip">반려동물</span>
-          <span class="chip">야외</span>
-        </div>
-      </aside>
-    </section>
-
-    <!-- about -->
-    <section id="about" class="mt-10 glass rounded-2xl p-5">
-      <h3 class="font-semibold text-lg mb-2">안내</h3>
-      <p class="text-white/80 text-sm leading-6">
-        이 페이지는 <b>서울시 실시간 도시데이터</b> 스타일을 모사한 <b>임시 데모</b>입니다.
-        지도/차트는 공개 라이브러리(Leaflet, Chart.js)를 사용했고, 데이터는 모의 값입니다.
-        실제 연계 시 서울시 오픈 API의 응답을 <code>hotspots</code>에 매핑할 예정입니다.
-      </p>
-    </section>
-  </main>
-
-  <script>
-    // -------- Mock data (핫스팟 정의) ----------
-    const hotspots = {
-      "어린이대공원": {
-        center: [37.5483, 127.0792],
-        circleRadius: 450,
-        persons: 5200,                    // 실시간 인구(추정)
-        congestion: 68,                   // 0~100
-        changeRate: +16.1,                // 전일 대비
-        traffic: 18,                      // km/h
-        weather: "☀️ 28.6°C",
-        poi: [
-          { name: "남문", coord: [37.5489,127.0826], type: "gate" },
-          { name: "지하철 7호선 어린이대공원(6번출구)", coord: [37.5481,127.0742], type: "subway" },
-          { name: "주차장", coord: [37.5472,127.0749], type: "parking" },
-          { name: "따릉이 대여소", coord: [37.5477,127.0799], type: "bike" }
-        ],
-        heat: [
-          [37.5489,127.0820,0.8],[37.5468,127.0785,0.6],[37.5502,127.0782,0.5],
-          [37.5475,127.0810,0.7],[37.5482,127.0790,0.9]
-        ],
-        hourly: [35,42,40,38,45,52,60,70,72,68,65,61,58,56,60,64,70,74,78,80,76,69,58,44]
-      },
-      "여의도한강공원": {
-        center: [37.5261,126.9315],
-        circleRadius: 650,
-        persons: 7800,
-        congestion: 82,
-        changeRate: +8.3,
-        traffic: 22,
-        weather: "🌤 27.1°C",
-        poi: [
-          { name: "여의나루역 2번출구", coord: [37.5271,126.9328], type: "subway" },
-          { name: "주차장 P3", coord: [37.5278,126.9347], type: "parking" },
-          { name: "따릉이 여의나루", coord: [37.5257,126.9336], type: "bike" }
-        ],
-        heat: [
-          [37.5266,126.9342,0.8],[37.5238,126.9305,0.6],[37.5271,126.9289,0.5],
-          [37.5262,126.9331,0.9],[37.5251,126.9318,0.7]
-        ],
-        hourly: [22,20,18,17,19,24,33,45,58,70,78,82,80,76,74,72,68,66,70,75,71,60,42,28]
-      },
-      "서울숲": {
-        center: [37.5446,127.0378],
-        circleRadius: 520,
-        persons: 4100,
-        congestion: 55,
-        changeRate: -3.2,
-        traffic: 17,
-        weather: "⛅️ 26.9°C",
-        poi: [
-          { name: "서울숲역 3번출구", coord: [37.5442,127.0447], type: "subway" },
-          { name: "주차장", coord: [37.5439,127.0356], type: "parking" },
-          { name: "따릉이 서울숲", coord: [37.5437,127.0387], type: "bike" }
-        ],
-        heat: [
-          [37.5455,127.0386,0.7],[37.5448,127.0399,0.65],[37.5432,127.0366,0.55],
-          [37.5449,127.0372,0.8],[37.5462,127.0378,0.5]
-        ],
-        hourly: [15,13,12,12,15,22,31,42,50,55,57,59,60,58,56,54,53,51,50,52,55,48,35,20]
-      }
-    };
-
-    // --------- Leaflet map ----------
-    const map = L.map('map',{zoomControl:true, scrollWheelZoom:true});
-    const tilesAuto = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-      maxZoom: 19, attribution: '&copy; OpenStreetMap'
-    });
-    const tilesGray = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{
-      maxZoom: 20, attribution: '&copy; OSM & CARTO'
-    });
-    const tilesDark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
-      maxZoom: 20, attribution: '&copy; OSM & CARTO'
-    });
-    tilesAuto.addTo(map);
-
-    const layers = {
-      population: L.layerGroup().addTo(map),
-      congestion: L.layerGroup().addTo(map),
-      parking: L.layerGroup(),
-      cctv: L.layerGroup(),
-      bike: L.layerGroup(),
-      subway: L.layerGroup()
-    };
-
-    const icons = {
-      parking: L.divIcon({html:'<div class="chip">🅿️</div>',className:'',iconSize:[24,24]}),
-      bike: L.divIcon({html:'<div class="chip">🚲</div>',className:'',iconSize:[24,24]}),
-      cctv: L.divIcon({html:'<div class="chip">📹</div>',className:'',iconSize:[24,24]}),
-      subway: L.divIcon({html:'<div class="chip">🚇</div>',className:'',iconSize:[24,24]}),
-      gate:   L.divIcon({html:'<div class="chip">🚪</div>',className:'',iconSize:[24,24]})
-    };
-
-    let heatLayer = null;
-    let areaCircle = null;
-
-    // --------- Chart ----------
-    const ctx = document.getElementById('chart');
-    const chart = new Chart(ctx, {
-      type:'bar',
-      data:{ labels:[...Array(24).keys()].map(h=>`${h}시`), datasets:[{label:'시간대 인구/혼잡도(지수)', data:[], borderWidth:0}]},
-      options:{
-        responsive:true, maintainAspectRatio:false,
-        scales:{ y:{ beginAtZero:true, grid:{color:'rgba(255,255,255,.08)'}, ticks:{color:'rgba(255,255,255,.8)'}},
-                 x:{ grid:{display:false}, ticks:{color:'rgba(255,255,255,.7)'}}},
-        plugins:{ legend:{labels:{color:'rgba(255,255,255,.8)'}}, tooltip:{mode:'index',intersect:false} }
-      }
-    });
-
-    // --------- UI control ----------
-    const $ = (sel)=>document.querySelector(sel);
-    const hotspotSel = $('#hotspotSel');
-
-    function fmt(n){ return n.toLocaleString('ko-KR'); }
-    function statusFrom(score){
-      if(score>=75) return {label:'붐빔', color:'#ef4444'};
-      if(score>=55) return {label:'약간 붐빔', color:'#f59e0b'};
-      return {label:'보통', color:'#22c55e'};
-    }
-
-    function renderHotspot(name){
-      const h = hotspots[name];
-      // header chips
-      $('#weatherChip').textContent = h.weather;
-      $('#titleNow').textContent = `지금 ${name}은`;
-
-      // map view
-      map.setView(h.center, 15);
-
-      // clear layers
-      Object.values(layers).forEach(g=>g.clearLayers());
-      if(heatLayer) map.removeLayer(heatLayer);
-      if(areaCircle) map.removeLayer(areaCircle);
-
-      // area circle (population area)
-      areaCircle = L.circle(h.center, {radius:h.circleRadius, color:'#7c3aed', weight:2, fill:true, fillOpacity:.08}).addTo(layers.population);
-
-      // heat
-      heatLayer = L.heatLayer(h.heat,{radius:45, blur:30, maxZoom:16, gradient:{0.2:'#22c55e',0.5:'#f59e0b',0.8:'#ef4444'}}).addTo(layers.congestion);
-
-      // POIs
-      h.poi.forEach(p=>{
-        L.marker(p.coord,{icon:icons[p.type]||icons.gate}).addTo(layers[p.type]||layers.population)
-          .bindTooltip(p.name,{direction:'top',offset:[0,-10]});
-      });
-
-      // right panel list
-      const ul = $('#poiList'); ul.innerHTML='';
-      h.poi.forEach(p=>{
-        const li = document.createElement('li');
-        li.innerHTML = `<div class="glass rounded-lg px-3 py-2 flex justify-between"><span>${p.name}</span><span class="opacity-70">${iconEmoji(p.type)}</span></div>`;
-        ul.appendChild(li);
-      });
-
-      // stats
-      $('#peopleNow').textContent = fmt(h.persons);
-      $('#congestionScore').textContent = `${h.congestion} / 100`;
-      $('#changeRate').textContent = `${(h.changeRate>0?'+':'')}${h.changeRate}%`;
-      $('#trafficSpeed').textContent = `${h.traffic} km/h`;
-      const st = statusFrom(h.congestion);
-      const badge = $('#statusBadge');
-      badge.textContent = st.label;
-      badge.style.background = 'rgba(255,255,255,.06)';
-      badge.style.borderColor = st.color;
-      badge.style.boxShadow = `0 0 0 2px ${hexToRGBA(st.color,.3)} inset`;
-
-      // chart
-      chart.data.datasets[0].data = h.hourly;
-      chart.update();
-
-      // updated at
-      const now = new Date();
-      $('#updatedAt').textContent = now.toLocaleString('ko-KR') + ' 기준';
-    }
-
-    function iconEmoji(type){
-      return {parking:'🅿️', bike:'🚲', cctv:'📹', subway:'🚇', gate:'🚪'}[type] || '📍';
-    }
-    function hexToRGBA(hex,a=1){ const h=hex.replace('#',''); const bigint=parseInt(h,16);
-      const r=(bigint>>16)&255,g=(bigint>>8)&255,b=bigint&255; return `rgba(${r},${g},${b},${a})`; }
-
-    // category toggles
-    document.querySelectorAll('button[data-layer]').forEach(btn=>{
-      btn.addEventListener('click',()=>{
-        const key = btn.dataset.layer;
-        const grp = (key==='congestion') ? heatLayer : layers[key];
-        const on = btn.classList.toggle('active');
-        if(key==='congestion'){
-          if(on) heatLayer.addTo(map); else map.removeLayer(heatLayer);
-        }else{
-          if(on) grp.addTo(map); else map.removeLayer(grp);
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>세종대학교 실시간 도시데이터 프로젝트</title>
+    <!-- Tailwind (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Pretendard Font -->
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    <style>
+        :root {
+            --brand-gradient: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #c026d3 100%);
         }
-      });
-    });
+        html, body {
+            height: 100%;
+            background-color: #020617; /* bg-slate-950 */
+            color: #f8fafc; /* text-slate-50 */
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+        }
+        .glass {
+            backdrop-filter: saturate(150%) blur(12px);
+            background: rgba(30, 41, 59, 0.75); /* bg-slate-800/75 */
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem 0.9rem;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.05);
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all 0.2s ease-in-out;
+            cursor: pointer;
+        }
+        .chip:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+        .chip.active {
+            background-color: #4f46e5; /* bg-indigo-600 */
+            border-color: transparent;
+            color: white;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
+        }
+        .legend-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; margin-right: 6px; }
+        .shadow-soft { box-shadow: 0 20px 40px rgba(0,0,0,.3); }
 
-    // style switch
-    document.querySelectorAll('button[data-style]').forEach(btn=>{
-      btn.addEventListener('click',()=>{
-        const v = btn.dataset.style;
-        [tilesAuto,tilesGray,tilesDark].forEach(t=>map.removeLayer(t));
-        if(v==='dark') tilesDark.addTo(map);
-        else if(v==='gray') tilesGray.addTo(map);
-        else tilesAuto.addTo(map);
-      });
-    });
+        /* map */
+        #map { height: 65vh; border-radius: 18px; overflow: hidden; }
+        .leaflet-control-container .leaflet-top.leaflet-left { margin-top: 80px; }
+        .leaflet-control-zoom { border: 1px solid rgba(255,255,255,0.1) !important; background: rgba(30, 41, 59, 0.6) !important; backdrop-filter: blur(10px); }
+        .leaflet-control-zoom-in, .leaflet-control-zoom-out { color: white !important; background: transparent !important; }
+        .leaflet-control-zoom-in:hover, .leaflet-control-zoom-out:hover { background-color: rgba(255,255,255,0.1) !important; }
+        .custom-tooltip { background-color: #1e293b; color: white; border: 1px solid #334155; }
 
-    hotspotSel.addEventListener('change', e=> renderHotspot(e.target.value));
-    renderHotspot(hotspotSel.value);
-  </script>
+        /* chart */
+        .chart-container { position: relative; height: 220px; width: 100%; }
+
+        /* scroll */
+        * { scroll-behavior: smooth; }
+    </style>
+    <!-- Leaflet & Heatmap Plugin -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body class="text-slate-200">
+    <!-- Header -->
+    <header class="sticky top-0 z-[1000] glass border-b border-slate-700/50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div class="grid grid-cols-12 items-center gap-4">
+                <!-- Logo -->
+                <div class="col-span-12 lg:col-span-3 flex items-center gap-3">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2L3 7V17L12 22L21 17V7L12 2Z" fill="url(#brand-gradient-header)" />
+                        <defs><linearGradient id="brand-gradient-header" x1="3" y1="2" x2="21" y2="22" gradientUnits="userSpaceOnUse"><stop stop-color="#4f46e5"/><stop offset="1" stop-color="#c026d3"/></linearGradient></defs>
+                    </svg>
+                    <div>
+                        <h1 class="text-xl font-extrabold text-white tracking-tight">KoreaAiMap</h1>
+                        <p class="text-xs text-slate-400">서울 실시간 도시데이터 데모</p>
+                    </div>
+                </div>
+                
+                <!-- Search -->
+                <div class="col-span-12 lg:col-span-6">
+                    <div class="relative w-full" id="search-container">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg class="h-5 w-5 text-slate-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path></svg>
+                        </div>
+                        <input type="text" id="search-input" placeholder="장소 또는 키워드 검색 (예: 어린이대공원, 여의도한강공원, 서울숲, 강남)" class="block w-full bg-slate-900/70 border border-slate-700 rounded-lg py-2.5 pl-10 pr-3 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition">
+                        <div id="hotspot-dropdown" class="absolute mt-2 w-full glass rounded-xl py-1 shadow-lg z-[1001] hidden">
+                           <!-- Search results will be populated here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Update Info -->
+                 <div class="col-span-12 lg:col-span-3 flex items-center justify-end gap-2 sm:gap-3">
+                    <div id="weatherChip" class="chip">☀️ --.-°C</div>
+                    <div id="updatedAtChip" class="chip hidden sm:flex">--:-- 기준</div>
+                </div>
+            </div>
+             <!-- Category Chips -->
+            <div class="mt-4 flex gap-2 flex-wrap">
+                <button data-layer="population" class="chip active">👥 인구</button>
+                <button data-layer="congestion" class="chip active">🌡️ 혼잡도</button>
+                <button data-layer="parking" class="chip">🅿️ 주차</button>
+                <button data-layer="cctv" class="chip">📹 CCTV</button>
+                <button data-layer="bike" class="chip">🚲 따릉이</button>
+                <button data-layer="subway" class="chip">🚇 지하철</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content (same as before) -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-24">
+        <!-- Map + Side Tools -->
+        <section class="relative">
+            <div id="map" class="shadow-soft"></div>
+            <!-- Map style switch -->
+            <div class="absolute top-4 right-4 z-[401] glass rounded-xl p-1.5 flex flex-col gap-1.5">
+                <button class="chip !px-3 !py-1.5 active" data-style="dark">야간</button>
+                <button class="chip !px-3 !py-1.5" data-style="gray">흑백</button>
+                <button class="chip !px-3 !py-1.5" data-style="auto">일반</button>
+            </div>
+            <!-- Legend -->
+            <div id="legend" class="absolute bottom-4 left-4 z-[401] glass rounded-xl p-3 text-sm">
+                <div class="mb-2 font-semibold text-white">혼잡도</div>
+                <div class="flex items-center"><span class="legend-dot" style="background:#22c55e"></span>여유</div>
+                <div class="flex items-center mt-1"><span class="legend-dot" style="background:#f59e0b"></span>보통</div>
+                <div class="flex items-center mt-1"><span class="legend-dot" style="background:#ef4444"></span>붐빔</div>
+            </div>
+        </section>
+
+        <!-- Info Panel -->
+        <section class="mt-6 grid lg:grid-cols-3 gap-6">
+            <!-- Big Card -->
+            <article class="lg:col-span-2 glass rounded-2xl p-6">
+                <div class="flex flex-wrap items-baseline gap-x-4 gap-y-2">
+                    <h2 id="titleNow" class="text-2xl font-bold text-white"></h2>
+                    <span id="statusBadge" class="chip text-base"></span>
+                    <span id="updatedAt" class="text-slate-400 text-sm ml-auto"></span>
+                </div>
+                <div class="grid sm:grid-cols-3 gap-4 mt-5">
+                    <div class="glass rounded-xl p-4 flex flex-col">
+                        <div class="text-sm text-slate-400 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                            실시간 인구(추정)
+                        </div>
+                        <div id="peopleNow" class="text-3xl font-bold mt-2 text-white">—</div>
+                        <div id="stayTime" class="text-slate-400 text-sm mt-auto pt-1"></div>
+                    </div>
+                    <div class="glass rounded-xl p-4 flex flex-col">
+                        <div class="text-sm text-slate-400 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 11l3-3m0 0l3 3m-3-3v8m0-13a9 9 0 110 18 9 9 0 010-18z"></path></svg>
+                             혼잡도
+                        </div>
+                        <div id="congestionScore" class="text-3xl font-bold mt-2 text-white">—</div>
+                        <div id="changeRate" class="text-sm mt-auto pt-1"></div>
+                    </div>
+                    <div class="glass rounded-xl p-4 flex flex-col">
+                        <div class="text-sm text-slate-400 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            주변 교통 속도
+                        </div>
+                        <div id="trafficSpeed" class="text-3xl font-bold mt-2 text-white">—</div>
+                        <div class="text-slate-400 text-sm mt-auto pt-1">차량 평균 속도</div>
+                    </div>
+                </div>
+                <div class="mt-6">
+                    <h3 class="font-semibold text-slate-300 mb-2">시간대별 혼잡도 예측</h3>
+                    <div class="chart-container">
+                        <canvas id="chart"></canvas>
+                    </div>
+                </div>
+            </article>
+            <!-- Details -->
+            <aside class="glass rounded-2xl p-6">
+                <h3 class="font-semibold text-xl text-white mb-4">주요 지점 정보</h3>
+                <ul id="poiList" class="space-y-3 text-sm max-h-[300px] overflow-y-auto pr-2"></ul>
+                <hr class="border-white/10 my-5">
+                <h3 class="font-semibold text-xl text-white mb-4">장소 특징</h3>
+                <div id="placeTags" class="flex flex-wrap gap-2"></div>
+            </aside>
+        </section>
+
+        <!-- About -->
+        <section id="about" class="mt-10 glass rounded-2xl p-6">
+            <h3 class="font-semibold text-lg mb-2 text-white">ℹ️ 서비스 안내</h3>
+            <p class="text-slate-300 text-sm leading-6">
+                본 페이지는 <b>서울시 실시간 도시데이터</b> 프로젝트의 데모 페이지입니다. 지도 및 차트 시각화에는 Leaflet.js, Chart.js 등 오픈소스 라이브러리를 사용하였으며, 표시되는 모든 데이터는 실제가 아닌 모의 데이터입니다. 올해 말에 배포될 실제 프로젝트에서서는 실시간 정보와 AI 경로 추천 기능을 제공할 예정입니다.
+            </p>
+        </section>
+    </main>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // -------- Mock data (핫스팟 정의) ----------
+        const hotspots = {
+            "어린이대공원": {
+                center: [37.5483, 127.0792], zoom: 15, circleRadius: 450, persons: 5200, stayHours: 2, congestion: 68, changeRate: +16.1, traffic: 18, weather: "☀️ 28.6°C",
+                tags: ["가족나들이", "동물원", "놀이공원", "산책"],
+                poi: [
+                    { name: "정문", coord: [37.5489,127.0826], type: "gate" }, { name: "7호선 어린이대공원역", coord: [37.5481,127.0742], type: "subway" },
+                    { name: "정문 주차장", coord: [37.5472,127.0749], type: "parking" }, { name: "따릉이 대여소", coord: [37.5477,127.0799], type: "bike" }
+                ],
+                heat: [[37.5489,127.0820,0.8],[37.5468,127.0785,0.6],[37.5502,127.0782,0.5],[37.5475,127.0810,0.7],[37.5482,127.0790,0.9]],
+                hourly: [35,42,40,38,45,52,60,70,72,68,65,61,58,56,60,64,70,74,78,80,76,69,58,44]
+            },
+            "여의도한강공원": {
+                center: [37.5261,126.9315], zoom: 15, circleRadius: 650, persons: 7800, stayHours: 3, congestion: 82, changeRate: +8.3, traffic: 22, weather: "🌤 27.1°C",
+                tags: ["피크닉", "자전거", "야경", "데이트"],
+                poi: [
+                    { name: "5호선 여의나루역", coord: [37.5271,126.9328], type: "subway" }, { name: "제3주차장", coord: [37.5278,126.9347], type: "parking" },
+                    { name: "따릉이(여의나루역 1번출구)", coord: [37.5257,126.9336], type: "bike" }, { name: "이랜드크루즈 선착장", coord: [37.5244, 126.9324], type:"gate"}
+                ],
+                heat: [[37.5266,126.9342,0.8],[37.5238,126.9305,0.6],[37.5271,126.9289,0.5],[37.5262,126.9331,0.9],[37.5251,126.9318,0.7]],
+                hourly: [22,20,18,17,19,24,33,45,58,70,78,82,80,76,74,72,68,66,70,75,71,60,42,28]
+            },
+            "서울숲": {
+                center: [37.5446, 127.0378], zoom: 15, circleRadius: 520, persons: 4100, stayHours: 2.5, congestion: 55, changeRate: -3.2, traffic: 17, weather: "⛅️ 26.9°C",
+                tags: ["공원", "자연", "산책", "피크닉"],
+                poi: [
+                    { name: "수인분당선 서울숲역", coord: [37.5442,127.0447], type: "subway" }, { name: "서울숲 주차장", coord: [37.5439,127.0356], type: "parking" },
+                    { name: "따릉이(서울숲역 4번출구)", coord: [37.5437,127.0387], type: "bike" }
+                ],
+                heat: [[37.5455,127.0386,0.7],[37.5448,127.0399,0.65],[37.5432,127.0366,0.55],[37.5449,127.0372,0.8],[37.5462,127.0378,0.5]],
+                hourly: [15,13,12,12,15,22,31,42,50,55,57,59,60,58,56,54,53,51,50,52,55,48,35,20]
+            },
+            "강남역": {
+                center: [37.4981, 127.0276], zoom: 16, circleRadius: 400, persons: 12500, stayHours: 1.5, congestion: 95, changeRate: +25.5, traffic: 12, weather: "☀️ 29.1°C",
+                tags: ["쇼핑", "맛집", "약속장소", "유동인구"],
+                poi: [
+                    { name: "2호선 강남역", coord: [37.4979,127.0276], type: "subway" }, { name: "강남역 11번 출구", coord: [37.4989, 127.0280], type: "gate"},
+                    { name: "따릉이(강남역 2번출구)", coord: [37.4970, 127.0285], type: "bike" }
+                ],
+                heat: [[37.4989,127.0280,0.9],[37.4970,127.0265,0.7],[37.4985,127.0290,0.6]],
+                hourly: [40,35,38,45,55,68,75,82,88,92,95,93,90,85,88,90,94,98,100,96,85,70,60,50]
+            },
+            "명동": {
+                center: [37.5619, 126.9856], zoom: 16, circleRadius: 450, persons: 9800, stayHours: 2, congestion: 88, changeRate: -5.1, traffic: 15, weather: "☀️ 28.8°C",
+                tags: ["관광", "쇼핑", "길거리음식", "외국인"],
+                poi: [
+                    { name: "4호선 명동역", coord: [37.5609, 126.9864], type: "subway" }, { name: "2호선 을지로입구역", coord: [37.5661, 126.9824], type: "subway"},
+                    { name: "명동예술극장", coord: [37.5627, 126.9855], type: "gate" }, { name: "따릉이(명동역 3번출구)", coord: [37.5613, 126.9857], type: "bike" }
+                ],
+                heat: [[37.5625,126.9850,0.95],[37.5633,126.9838,0.7],[37.5610,126.9870,0.6]],
+                hourly: [30,28,32,40,55,68,78,85,88,90,87,85,83,86,89,92,90,85,80,72,60,50,40,35]
+            },
+            "광화문광장": {
+                center: [37.5721, 126.9765], zoom: 16, circleRadius: 350, persons: 6100, stayHours: 1.5, congestion: 72, changeRate: +12.0, traffic: 20, weather: "🌤 27.5°C",
+                tags: ["역사", "광장", "산책", "도심"],
+                poi: [
+                    { name: "5호선 광화문역", coord: [37.5701, 126.9768], type: "subway" }, { name: "세종대왕 동상", coord: [37.5727, 126.9769], type: "gate"},
+                    { name: "이순신장군 동상", coord: [37.5710, 126.9770], type: "gate" }, { name: "따릉이(세종문화회관)", coord: [37.5724, 126.9750], type: "bike" }
+                ],
+                heat: [[37.5727,126.9769,0.8],[37.5710,126.9770,0.9],[37.5740,126.9765,0.6]],
+                hourly: [25,22,25,30,40,50,60,68,72,75,73,70,68,65,68,70,74,78,75,68,55,45,35,30]
+            },
+            "이태원 관광특구": {
+                center: [37.5345, 126.9940], zoom: 16, circleRadius: 380, persons: 7200, stayHours: 3, congestion: 78, changeRate: +5.8, traffic: 16, weather: "🌙 24.5°C",
+                tags: ["야간", "다국적", "맛집", "클럽"],
+                poi: [
+                    { name: "6호선 이태원역", coord: [37.5346, 126.9945], type: "subway" }, { name: "해밀톤호텔", coord: [37.5349, 126.9939], type: "gate"},
+                    { name: "용산구청", coord: [37.5321, 126.9906], type: "parking" }, { name: "따릉이(이태원역 4번출구)", coord: [37.5342, 126.9948], type: "bike" }
+                ],
+                heat: [[37.5348,126.9935,0.9],[37.5352,126.9958,0.7],[37.5339,126.9922,0.6]],
+                hourly: [20,18,17,20,25,35,45,55,62,68,72,75,78,76,74,75,78,82,88,92,90,75,55,35]
+            }
+        };
+
+        // --------- Leaflet map ----------
+        const map = L.map('map', { zoomControl: true, scrollWheelZoom: true });
+        const tilesGray = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 20, attribution: '&copy; OSM & CARTO' });
+        const tilesDark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 20, attribution: '&copy; OSM & CARTO' });
+        const tilesAuto = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' });
+        tilesDark.addTo(map);
+
+        const layers = {
+            population: L.layerGroup().addTo(map), congestion: L.layerGroup().addTo(map), parking: L.layerGroup(),
+            cctv: L.layerGroup(), bike: L.layerGroup(), subway: L.layerGroup()
+        };
+
+        const icons = {
+            parking: L.divIcon({ html: '🅿️', className: 'map-icon', iconSize: [24, 24] }),
+            bike: L.divIcon({ html: '🚲', className: 'map-icon', iconSize: [24, 24] }),
+            cctv: L.divIcon({ html: '📹', className: 'map-icon', iconSize: [24, 24] }),
+            subway: L.divIcon({ html: '🚇', className: 'map-icon', iconSize: [24, 24] }),
+            gate: L.divIcon({ html: '📍', className: 'map-icon', iconSize: [24, 24] })
+        };
+        let heatLayer = null, areaCircle = null;
+
+        // --------- Chart ----------
+        const ctx = document.getElementById('chart').getContext('2d');
+        const gradient = ctx.createLinearGradient(0, 0, 0, 200);
+        gradient.addColorStop(0, 'rgba(99, 102, 241, 0.5)');
+        gradient.addColorStop(1, 'rgba(99, 102, 241, 0)');
+        
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [...Array(24).keys()].map(h => `${String(h).padStart(2, '0')}:00`),
+                datasets: [{
+                    label: '시간대별 혼잡도', data: [],
+                    borderColor: 'rgba(99, 102, 241, 1)',
+                    backgroundColor: gradient,
+                    borderWidth: 2.5,
+                    pointBackgroundColor: 'rgba(99, 102, 241, 1)',
+                    pointBorderColor: '#fff',
+                    pointHoverRadius: 6,
+                    pointRadius: 0,
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,.1)' }, ticks: { color: 'rgba(255,255,255,.8)' } },
+                    x: { grid: { display: false }, ticks: { color: 'rgba(255,255,255,.7)', maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { mode: 'index', intersect: false, backgroundColor: 'rgba(15, 23, 42, 0.8)', titleFont: {weight: 'bold'}, bodySpacing: 5, padding: 10, cornerRadius: 8 }
+                }
+            }
+        });
+
+        // --------- UI control ----------
+        const $ = (sel) => document.querySelector(sel);
+        const $$ = (sel) => document.querySelectorAll(sel);
+        const fmt = (n) => n.toLocaleString('ko-KR');
+
+        function statusFrom(score) {
+            if (score >= 80) return { label: '붐빔', color: '#ef4444' };
+            if (score >= 60) return { label: '약간 붐빔', color: '#f59e0b' };
+            return { label: '여유', color: '#22c55e' };
+        }
+
+        function renderHotspot(name) {
+            const h = hotspots[name];
+            if (!h) return;
+
+            // Update UI with selected hotspot data
+            $('#search-input').value = name;
+            $('#weatherChip').textContent = h.weather;
+            $('#titleNow').textContent = `지금 ${name}은`;
+            
+            map.setView(h.center, h.zoom);
+            
+            Object.values(layers).forEach(g => g.clearLayers());
+            if (heatLayer) map.removeLayer(heatLayer);
+            if (areaCircle) map.removeLayer(areaCircle);
+            
+            areaCircle = L.circle(h.center, { radius: h.circleRadius, color: '#a78bfa', weight: 2, fill: true, fillOpacity: .08 }).addTo(layers.population);
+            heatLayer = L.heatLayer(h.heat, { radius: 45, blur: 30, maxZoom: 17, gradient: { 0.2: '#22c55e', 0.5: '#f59e0b', 0.8: '#ef4444' } }).addTo(layers.congestion);
+            $$('button[data-layer]').forEach(btn => updateLayerVisibility(btn)); // Update layer visibility based on toggles
+            
+            h.poi.forEach(p => {
+                L.marker(p.coord, { icon: icons[p.type] || icons.gate })
+                    .addTo(layers[p.type] || layers.population)
+                    .bindTooltip(p.name, { direction: 'top', offset: [0, -10], className: 'custom-tooltip' });
+            });
+            
+            $('#poiList').innerHTML = h.poi.map(p => `
+                <li class="glass rounded-lg px-4 py-3 flex justify-between items-center hover:bg-slate-700/50 transition-colors">
+                    <span class="font-medium text-slate-200">${p.name}</span>
+                    <span class="text-xl">${iconEmoji(p.type)}</span>
+                </li>
+            `).join('');
+
+            $('#placeTags').innerHTML = h.tags.map(tag => `<span class="chip bg-slate-700/50 !border-slate-600">${tag}</span>`).join('');
+
+            $('#peopleNow').textContent = fmt(h.persons);
+            $('#stayTime').textContent = `예상 평균 체류 ${h.stayHours}시간`;
+            $('#congestionScore').textContent = `${h.congestion}`;
+            const changeRateEl = $('#changeRate');
+            changeRateEl.textContent = `${(h.changeRate > 0 ? '▲' : '▼')} ${Math.abs(h.changeRate)}% (전일 대비)`;
+            changeRateEl.className = `text-sm mt-auto pt-1 ${h.changeRate > 0 ? 'text-red-400' : 'text-blue-400'}`;
+
+            $('#trafficSpeed').textContent = `${h.traffic} km/h`;
+            
+            const st = statusFrom(h.congestion);
+            const badge = $('#statusBadge');
+            badge.textContent = st.label;
+            badge.style.backgroundColor = hexToRGBA(st.color, 0.2);
+            badge.style.borderColor = st.color;
+            badge.style.color = st.color;
+
+            chart.data.datasets[0].data = h.hourly;
+            chart.update();
+            
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+            $('#updatedAt').textContent = timeString + ' 기준';
+            $('#updatedAtChip').textContent = timeString + ' 기준';
+        }
+
+        function iconEmoji(type) {
+            return { parking: '🅿️', bike: '🚲', cctv: '📹', subway: '🚇', gate: '📍' }[type] || '📍';
+        }
+
+        function hexToRGBA(hex, a = 1) {
+            const h = hex.replace('#', '');
+            const [r, g, b] = [parseInt(h.substring(0, 2), 16), parseInt(h.substring(2, 4), 16), parseInt(h.substring(4, 6), 16)];
+            return `rgba(${r},${g},${b},${a})`;
+        }
+        
+        // Search and Dropdown Logic
+        const searchInput = $('#search-input');
+        const hotspotDropdown = $('#hotspot-dropdown');
+
+        function updateDropdown(filter = '') {
+            const filteredNames = Object.keys(hotspots).filter(name => name.toLowerCase().includes(filter.toLowerCase()));
+            if (filteredNames.length > 0 && filter) {
+                hotspotDropdown.innerHTML = filteredNames.map(name => 
+                    `<a href="#" class="block px-4 py-2 text-sm text-slate-200 hover:bg-indigo-600" data-name="${name}">${name}</a>`
+                ).join('');
+                hotspotDropdown.classList.remove('hidden');
+            } else {
+                hotspotDropdown.classList.add('hidden');
+            }
+        }
+
+        searchInput.addEventListener('input', () => updateDropdown(searchInput.value));
+        searchInput.addEventListener('focus', () => updateDropdown(searchInput.value));
+        
+        hotspotDropdown.addEventListener('click', (e) => {
+            if (e.target.tagName === 'A') {
+                e.preventDefault();
+                const name = e.target.dataset.name;
+                renderHotspot(name);
+                hotspotDropdown.classList.add('hidden');
+            }
+        });
+        
+        document.addEventListener('click', (e) => {
+            if (!$('#search-container').contains(e.target)) {
+                 hotspotDropdown.classList.add('hidden');
+            }
+        });
+
+        // Layer Toggles
+        function updateLayerVisibility(btn) {
+            const key = btn.dataset.layer;
+            const grp = (key === 'congestion') ? heatLayer : layers[key];
+            if (!grp) return;
+
+            const on = btn.classList.contains('active');
+            if (map.hasLayer(grp) && !on) map.removeLayer(grp);
+            if (!map.hasLayer(grp) && on) grp.addTo(map);
+        }
+
+        $$('button[data-layer]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                btn.classList.toggle('active');
+                updateLayerVisibility(btn);
+            });
+        });
+
+        // Style Switch
+        $$('button[data-style]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                $$('button[data-style]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const v = btn.dataset.style;
+                [tilesAuto, tilesGray, tilesDark].forEach(t => map.removeLayer(t));
+                if (v === 'dark') tilesDark.addTo(map);
+                else if (v === 'gray') tilesGray.addTo(map);
+                else tilesAuto.addTo(map);
+            });
+        });
+
+        // Initial render
+        renderHotspot(Object.keys(hotspots)[0]);
+    });
+    </script>
 </body>
 </html>
