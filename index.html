@@ -120,6 +120,17 @@
 
     <!-- Main Content (same as before) -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-24">
+        <!-- Route Planner -->
+        <section class="glass rounded-xl p-4 mb-6 flex flex-col sm:flex-row gap-2 items-center">
+            <select id="routeStart" class="w-full sm:flex-1 bg-slate-900/70 border border-slate-700 rounded-lg px-3 py-2 text-white">
+                <option value="">출발지 선택</option>
+            </select>
+            <span class="hidden sm:block text-slate-400">➡️</span>
+            <select id="routeEnd" class="w-full sm:flex-1 bg-slate-900/70 border border-slate-700 rounded-lg px-3 py-2 text-white">
+                <option value="">도착지 선택</option>
+            </select>
+            <button id="routeBtn" class="chip w-full sm:w-auto">경로 보기</button>
+        </section>
         <!-- Map + Side Tools -->
         <section class="relative">
             <div id="map" class="shadow-soft"></div>
@@ -294,7 +305,7 @@
             subway: L.divIcon({ html: '🚇', className: 'map-icon', iconSize: [24, 24] }),
             gate: L.divIcon({ html: '📍', className: 'map-icon', iconSize: [24, 24] })
         };
-        let heatLayer = null, areaCircle = null;
+        let heatLayer = null, areaCircle = null, routeLine = null, routeMarkers = [];
 
         // --------- Chart ----------
         const ctx = document.getElementById('chart').getContext('2d');
@@ -443,6 +454,41 @@
         document.addEventListener('click', (e) => {
             if (!$('#search-container').contains(e.target)) {
                  hotspotDropdown.classList.add('hidden');
+            }
+        });
+
+        // Route Planner Logic
+        const startSelect = $('#routeStart');
+        const endSelect = $('#routeEnd');
+        Object.keys(hotspots).forEach(name => {
+            startSelect.add(new Option(name, name));
+            endSelect.add(new Option(name, name));
+        });
+
+        $('#routeBtn').addEventListener('click', async () => {
+            const s = startSelect.value;
+            const e = endSelect.value;
+            if (!s || !e || s === e) {
+                alert('출발지와 도착지를 선택하세요.');
+                return;
+            }
+            const start = hotspots[s].center;
+            const end = hotspots[e].center;
+            try {
+                const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${start[1]},${start[0]};${end[1]},${end[0]}?geometries=geojson`);
+                const data = await res.json();
+                if (!data.routes || !data.routes.length) throw new Error('no route');
+                const coords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+                if (routeLine) map.removeLayer(routeLine);
+                routeMarkers.forEach(m => map.removeLayer(m));
+                routeMarkers = [
+                    L.marker(start).addTo(map),
+                    L.marker(end).addTo(map)
+                ];
+                routeLine = L.polyline(coords, { color: '#4f46e5', weight: 5 }).addTo(map);
+                map.fitBounds(routeLine.getBounds());
+            } catch (err) {
+                alert('경로를 찾을 수 없습니다.');
             }
         });
 
