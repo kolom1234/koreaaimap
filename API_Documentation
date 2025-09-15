@@ -1,0 +1,127 @@
+KoreaAiMap API 명세서
+1) 외부(서울시) 실시간 도시데이터 API 명세
+1-1. 개요
+•	대상: 서울시 주요 120개 장소의 실시간 융합 데이터(인구·상권·도로소통·대중교통·날씨/환경·문화행사 등) 
+•	제약: 한 번에 1개 장소만 호출(장소명 또는 장소코드 중 택1) · 샘플키는 ‘광화문·덕수궁’만 조회 가능
+•	갱신/구성 변경 알림(중요): 2025-09-17 업데이트로 실시간 뉴스/문화행사 추가, 버스 도착 정보 삭제 등의 변동 공지. 배포 전후 스키마 회귀 테스트 권장.
+1-2. 기본 호출 규격(패턴)
+•	GET http://openapi.seoul.go.kr:8088/{KEY}/{TYPE}/{SERVICE}/{START}/{END}/{PLACE}
+•	KEY : 발급받은 인증키
+•	TYPE : json 또는 xml (서울 열린데이터 공통 규격) 
+•	SERVICE : 통합 실시간 도시데이터는 보통 citydata(하위 주제별로 citydata_cmrcl 등 변형 서비스도 존재) 
+•	START/END : 조회 인덱스(일반적으로 1/5처럼 소량 지정) 
+•	PLACE : 장소명(예: 광화문·덕수궁) 또는 장소코드(예: POI009) 중 하나
+o	URL 인코딩 필수(가운데점 · 포함).
+샘플
+- 장소명(샘플키 범위)
+http://openapi.seoul.go.kr:8088/{KEY}/json/citydata/1/5/광화문·덕수궁
+- 장소코드(권장 예: 어린이대공원=POI104)
+http://openapi.seoul.go.kr:8088/{KEY}/json/citydata/1/5/POI104
+- 제약: “1회 1장소”, “장소명 OR 코드 택1”
+
+
+1-3. 응답(큰 틀)
+도시데이터 응답은 “장소별 융합 실시간 지표”를 카테고리 단위로 제공(인구, 상권, 도로소통, 대중교통, 날씨/환경, 문화행사 등). 2025-09-17 공지 기준으로 버스 도착 정보는 삭제, 실시간 뉴스/문화행사가 추가됨. 프런트에는 항상 마지막 갱신시각을 함께 표시 권장. 
+정확한 세부 필드 구조는 매뉴얼(열광 고지 첨부 ‘API 명세서’)에 따르며, 공지에 따라 변동 가능. 
+1-4. 장소코드(일부 발췌)
+•	POI009 광화문·덕수궁, POI010 보신각, POI014 강남역, POI015 건대입구역, POI033 서울역,
+POI053 합정역, POI055 홍대입구역(2호선), POI068 성수카페거리, POI071 압구정로데오거리,
+POI072 여의도, POI088 광화문광장, POI099 서울광장, POI103 양화한강공원,
+POI104 어린이대공원, POI105 여의도한강공원, POI106 월드컵공원, POI113 청와대 …(총 120개)
+→ 전체 목록/코드표는 데이터셋 페이지의 ‘서울시 주요 120장소명 목록(코드포함).xlsx’ 파일로 제공됨.
+
+2) 내부 프록시 API(프로토타입) — 우리 서비스 표준화 스펙
+프런트에서 서울시 API를 직접 호출하지 말고, api/(Spring) 프록시를 통해 호출(키 보호·캐시·로깅).
+2-1. 엔드포인트
+•	GET /api/v1/citydata?place={장소명}
+•	GET /api/v1/citydata?code={POI코드}
+•	공통: Cache-Control: max-age=60 / 서버 내부 60초 TTL 캐시 권장
+응답(요지)
+{
+  "place": { "code": "POI104", "name": "어린이대공원" },
+  "updatedAt": "2025-09-16T03:00:30Z",
+  "categories": {
+    "population": { /* 실시간/예측 인구 */ },
+    "traffic":    { /* 도로소통·돌발 등 */ },
+    "transit":    { /* (공지 이후) 버스 도착 제외 주의 */ },
+    "weather":    { /* 날씨/환경 */ },
+    "events":     { /* 문화행사(추가) */ },
+    "news":       { /* 긴급재난/연합뉴스 등(추가) */ }
+  },
+  "source": "Seoul Open Data Plaza"
+}
+3) 운영 실전용 호출 스크립트
+3-1. cURL(스모크 테스트)
+# 1) 장소명(샘플키 가능 구간)
+KEY="$SEOUL_GENERAL_KEY"
+curl -s "http://openapi.seoul.go.kr:8088/${KEY}/json/citydata/1/5/$(python3 - <<'PY'\nimport urllib.parse; print(urllib.parse.quote('광화문·덕수궁'))\nPY)"
+
+# 2) 장소코드(권장: POI104=어린이대공원)
+curl -s "http://openapi.seoul.go.kr:8088/${KEY}/json/citydata/1/5/POI104" | jq .
+•	규격/인덱스/타입(json/xml)은 열린데이터 공통 규칙을 따름. 
+3-2. Bash — 120개 일괄 수집(엑셀→CSV 후 사용)
+1.	먼저 공공데이터포털 데이터셋 페이지에서 ‘서울시 주요 120장소명 목록(코드포함).xlsx’를 내려받아 places.xlsx를 places.csv로 변환(엑셀/구글시트로 저장). 
+2.	CSV 헤더 예시: code,name (예: POI104,어린이대공원)
+#!/usr/bin/env bash
+set -euo pipefail
+KEY="${SEOUL_GENERAL_KEY}"
+CSV="./places.csv"        # code,name
+OUTDIR="./out/$(date +%F-%H%M)"
+mkdir -p "$OUTDIR"
+
+rate_limit() { sleep 0.7; }   # 과도한 호출 방지(1초 미만)
+
+tail -n +2 "$CSV" | while IFS=',' read -r CODE NAME; do
+  rate_limit
+  URL="http://openapi.seoul.go.kr:8088/${KEY}/json/citydata/1/5/${CODE}"
+  echo "[CALL] $CODE $NAME"
+  curl -s "$URL" -o "${OUTDIR}/${CODE}.json"
+done
+echo "Saved: $OUTDIR"
+3-3. PowerShell — 120개 일괄 수집
+$Key = $env:SEOUL_GENERAL_KEY
+$Csv = ".\places.csv"   # code,name
+$Out = ".\out\$(Get-Date -Format 'yyyy-MM-dd-HHmm')"
+New-Item -ItemType Directory -Force -Path $Out | Out-Null
+
+Import-Csv $Csv | ForEach-Object {
+  Start-Sleep -Milliseconds 700
+  $code = $_.code
+  $name = $_.name
+  $url  = "http://openapi.seoul.go.kr:8088/$Key/json/citydata/1/5/$code"
+  Invoke-WebRequest -UseBasicParsing $url -OutFile (Join-Path $Out "$code.json")
+  Write-Host "[CALL] $code $name"
+}
+3-4. Python(Excel 원본 직접 파싱 → JSONL 적재)
+# pip install requests pandas openpyxl
+import os, time, json, requests, pandas as pd
+KEY = os.environ["SEOUL_GENERAL_KEY"]
+df = pd.read_excel("places.xlsx")  # '코드','장소명' 컬럼 가정(헤더명은 파일에 맞춰 수정)
+records = []
+for _, r in df.iterrows():
+    code, name = str(r['코드']).strip(), str(r['장소명']).strip()
+    url = f"http://openapi.seoul.go.kr:8088/{KEY}/json/citydata/1/5/{code}"
+    try:
+        res = requests.get(url, timeout=8)
+        res.raise_for_status()
+        payload = res.json()
+        records.append({"code": code, "name": name, "fetchedAt": pd.Timestamp.utcnow().isoformat(), "raw": payload})
+    except Exception as e:
+        records.append({"code": code, "name": name, "error": str(e)})
+    time.sleep(0.7)  # rate limit
+with open("citydata_snapshot.jsonl", "w", encoding="utf-8") as f:
+    for rec in records:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+print("OK:", len(records))
+3-5. 프록시(API 게이트웨이 역할) 점검용
+- Fargate 배포 후(예: 어린이대공원)
+curl -s "https://api.koreaaimap.com/api/v1/citydata?code=POI104" | jq '.place,.updatedAt'
+
+4) 품질/호환성 체크리스트
+•	1개 장소/호출 제약 준수: 120개 전체 라운드 수집 시 호출 수를 계산(라운드 주기 3~5분 권장). 
+•	업데이트 공지 반영: 2025-09-17 변경(버스 도착 삭제, 뉴스/문화행사 추가)을 기준으로 파서/프런트 컴포넌트 점검. 
+•	키 보안: 키는 백엔드(프록시)에서만 사용. 프런트 번들에 포함 금지.
+•	URL 인코딩: 광화문·덕수궁처럼 가운데점(·) 포함 명칭은 인코딩 필수.
+•	오류 처리: HTTP 200이더라도 본문 CODE/MESSAGE에 에러가 올 수 있으니 파싱 검사(열린데이터 공통 규칙).
+•	출처 표기(공공누리 1유형): 화면/응답에 서울시 출처 표시. 
+
