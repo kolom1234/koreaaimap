@@ -1,0 +1,260 @@
+import json, os, textwrap, datetime, pathlib
+
+base_dir = "/mnt/data"
+os.makedirs(base_dir, exist_ok=True)
+
+# 1) Postman collection
+postman = {
+  "info": {
+    "name": "Seoul Citydata — Real-time 120 Places",
+    "_postman_id": "a3b3df04-2e72-4f8a-b4e8-120-seoul-citydata",
+    "description": "Postman collection to call Seoul Real-time Citydata API and your internal proxy.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "SEOUL_GENERAL_KEY", "value": ""},
+    {"key": "base_city", "value": "http://openapi.seoul.go.kr:8088/{{SEOUL_GENERAL_KEY}}/json"},
+    {"key": "base_internal", "value": "https://api.koreaaimap.com"}
+  ],
+  "item": [
+    {
+      "name": "Citydata by PLACE (name) — 샘플: 광화문·덕수궁",
+      "request": {
+        "method": "GET",
+        "url": "{{base_city}}/citydata/1/5/{{place}}",
+        "description": "장소명(place)로 호출합니다. 반드시 URL 인코딩 필요. 샘플키는 '광화문·덕수궁'만 응답합니다."
+      },
+      "event": [{
+        "listen": "test",
+        "script": {"exec": [
+          "pm.test('HTTP 200', () => pm.response.code === 200);",
+          "let b; try { b = pm.response.json(); } catch(e){ pm.expect.fail('JSON parse error'); }",
+          "pm.test('Body present', () => pm.expect(b).to.exist);"
+        ], "type": "text/javascript"}
+      }]
+    },
+    {
+      "name": "Citydata by CODE (POI) — 샘플: POI104(어린이대공원)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_city}}/citydata/1/5/{{code}}",
+        "description": "장소코드(code)로 호출합니다. 예: POI104=어린이대공원"
+      },
+      "event": [{
+        "listen": "test",
+        "script": {"exec": [
+          "pm.test('HTTP 200', () => pm.response.code === 200);",
+          "let b; try { b = pm.response.json(); } catch(e){ pm.expect.fail('JSON parse error'); }",
+          "pm.test('Body present', () => pm.expect(b).to.exist);"
+        ], "type": "text/javascript"}
+      }]
+    },
+    {
+      "name": "Internal Proxy — /api/v1/citydata?code=POI104",
+      "request": {
+        "method": "GET",
+        "url": "{{base_internal}}/api/v1/citydata?code=POI104",
+        "description": "우리 백엔드 프록시를 통해 호출합니다(권장). 키는 서버에서만 보관."
+      },
+      "event": [{
+        "listen": "test",
+        "script": {"exec": [
+          "pm.test('HTTP 200', () => pm.response.code === 200);"
+        ], "type": "text/javascript"}
+      }]
+    }
+  ]
+}
+postman_path = os.path.join(base_dir, "seoul_citydata.postman_collection.json")
+with open(postman_path, "w", encoding="utf-8") as f:
+    json.dump(postman, f, ensure_ascii=False, indent=2)
+
+# 2) Bash script
+bash_script = """#!/usr/bin/env bash
+# Bulk fetch Seoul citydata for 120 places.
+# Usage:
+#   SEOUL_GENERAL_KEY=xxxx ./citydata_collect.sh places.csv
+#   # places.csv must have headers: code,name  (e.g., POI104,어린이대공원)
+set -euo pipefail
+
+if [ -z "${SEOUL_GENERAL_KEY:-}" ]; then
+  echo "ERROR: set SEOUL_GENERAL_KEY in env." >&2
+  exit 1
+fi
+
+CSV="${1:-places.csv}"
+if [ ! -f "$CSV" ]; then
+  echo "ERROR: CSV not found: $CSV" >&2
+  exit 1
+fi
+
+OUTDIR="./out/$(date +%F-%H%M%S)"
+mkdir -p "$OUTDIR"
+
+rate_limit() { sleep 0.7; }  # adjust if needed
+
+# Skip BOM and header safely
+tail -n +2 "$CSV" | while IFS=',' read -r CODE NAME; do
+  CODE=$(echo "$CODE" | sed 's/\\r//g' | xargs)
+  NAME=$(echo "$NAME" | sed 's/\\r//g' | xargs)
+  [ -z "$CODE" ] && continue
+  URL="http://openapi.seoul.go.kr:8088/${SEOUL_GENERAL_KEY}/json/citydata/1/5/${CODE}"
+  echo "[CALL] $CODE $NAME"
+  curl -sS "$URL" -o "${OUTDIR}/${CODE}.json" || echo "[WARN] curl failed for $CODE" >&2
+  rate_limit
+done
+
+echo "Saved: $OUTDIR"
+"""
+bash_path = os.path.join(base_dir, "citydata_collect.sh")
+with open(bash_path, "w", encoding="utf-8") as f:
+    f.write(bash_script)
+os.chmod(bash_path, 0o755)
+
+# 3) Python script
+py_script = r'''#!/usr/bin/env python3
+"""
+Bulk fetch Seoul Real-time Citydata by POI code.
+Usage:
+  export SEOUL_GENERAL_KEY=xxxx
+  python citydata_collect.py places.xlsx        # Excel with columns containing '코드','장소명' (or CSV)
+  python citydata_collect.py places.csv
+Outputs:
+  citydata_snapshot.jsonl  (one JSON object per line)
+"""
+import os, sys, time, json, pathlib
+import pandas as pd
+
+KEY = os.environ.get("SEOUL_GENERAL_KEY")
+if not KEY:
+    print("ERROR: set SEOUL_GENERAL_KEY in environment.", file=sys.stderr)
+    sys.exit(1)
+
+if len(sys.argv) < 2:
+    print("Usage: python citydata_collect.py <places.(xlsx|csv)>", file=sys.stderr)
+    sys.exit(1)
+
+path = pathlib.Path(sys.argv[1])
+if not path.exists():
+    print(f"ERROR: file not found: {path}", file=sys.stderr)
+    sys.exit(1)
+
+# Load table
+if path.suffix.lower() in (".xlsx", ".xls"):
+    df = pd.read_excel(path)
+else:
+    df = pd.read_csv(path)
+
+# Normalize column names
+df.columns = [str(c).strip() for c in df.columns]
+
+# Try to detect columns
+def find_col(candidates):
+    for cand in candidates:
+        for col in df.columns:
+            if cand.lower() in col.lower():
+                return col
+    return None
+
+code_col = find_col(["코드", "poi", "code"])
+name_col = find_col(["장소명", "장소", "name"])
+
+if not code_col:
+    # Fallback to first column
+    code_col = df.columns[0]
+if not name_col and len(df.columns) > 1:
+    name_col = df.columns[1]
+
+records = []
+import requests
+session = requests.Session()
+session.headers.update({"User-Agent": "koreaaimap-citydata/1.0"})
+
+for _, r in df.iterrows():
+    code = str(r[code_col]).strip()
+    name = str(r[name_col]).strip() if name_col else ""
+    if not code or code.lower() == "nan":
+        continue
+    url = f"http://openapi.seoul.go.kr:8088/{KEY}/json/citydata/1/5/{code}"
+    try:
+        res = session.get(url, timeout=8)
+        ok = (res.status_code == 200)
+        body = res.json() if ok else {"_non_json": res.text}
+        records.append({"code": code, "name": name, "status": res.status_code, "raw": body})
+    except Exception as e:
+        records.append({"code": code, "name": name, "error": str(e)})
+    time.sleep(0.7)  # rate limit
+
+with open("citydata_snapshot.jsonl", "w", encoding="utf-8") as f:
+    for rec in records:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+print("Wrote", len(records), "records to citydata_snapshot.jsonl")
+'''
+py_path = os.path.join(base_dir, "citydata_collect.py")
+with open(py_path, "w", encoding="utf-8") as f:
+    f.write(py_script)
+os.chmod(py_path, 0o755)
+
+# 4) OpenAPI YAML
+openapi_yaml = """openapi: 3.0.3
+info:
+  title: KoreaAIMap Citydata Proxy
+  version: 1.0.0
+  description: >
+    Internal proxy that fetches Seoul 'citydata' for a single place (by code or name),
+    applies caching and returns a normalized JSON.
+servers:
+  - url: https://api.koreaaimap.com
+paths:
+  /api/v1/citydata:
+    get:
+      summary: Get real-time citydata for a place
+      description: >
+        Provide either a `code` (POI code, e.g., POI104) or `place` (Korean place name, e.g., 어린이대공원).
+        Exactly one of them must be provided.
+      parameters:
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+            example: POI104
+        - name: place
+          in: query
+          required: false
+          schema:
+            type: string
+            example: 어린이대공원
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  place:
+                    type: object
+                    properties:
+                      code: { type: string, example: POI104 }
+                      name: { type: string, example: 어린이대공원 }
+                  updatedAt: { type: string, format: date-time }
+                  categories:
+                    type: object
+                    additionalProperties: true
+                  source: { type: string, example: Seoul Open Data Plaza }
+        '400':
+          description: Bad Request (missing both `code` and `place`)
+        '502':
+          description: Upstream error from Seoul Open Data
+"""
+openapi_path = os.path.join(base_dir, "koreaaimap-citydata-proxy.yaml")
+with open(openapi_path, "w", encoding="utf-8") as f:
+    f.write(openapi_yaml)
+
+print("Artifacts created:")
+print(" -", postman_path)
+print(" -", bash_path)
+print(" -", py_path)
+print(" -", openapi_path)
