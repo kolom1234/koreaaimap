@@ -15,444 +15,529 @@
 # RECO(FastAPI) 골격
 
 
-## 폴더 구조
+## 1) RECO 서비스 목표/역할(요약)
+
+* **포트/경로:** Fargate(포트 **9000**) + ALB 경로 규칙 **`/reco/* → tg-reco`**, 헬스 `GET /health=200` &#x20;
+* **데이터 소스:** 프런트가 직접 서울시 API를 두드리지 않도록, \*\*내부 API 게이트웨이(Spring, `/api/v1/citydata`)\*\*를 1차 우선 사용. 키 보호/캐싱/로깅 일원화. (필요 시 백업 경로로 서울시 OpenAPI 직접 호출도 지원)&#x20;
+* **캐시 정책(초기):** 인구 등 핵심은 **5분 단위 갱신**, 사용자는 15분 지연을 감안(통신사 보정/전수화) → **프록시/RECO 레이어 TTL 60초 권장**. 수집 배치 시엔 700ms 레이트 리밋 권장.  &#x20;
+* **엔진:** 초기가동은 규칙기반(거리·혼잡도·날씨 가중)으로, 이후 ONNX/시계열 예측을 붙일 수 있게 **서비스 계층 분리**. (문서의 모델링 로드맵과 정합)&#x20;
+
+---
+
+## 2) 디렉터리 골격
 
 ```
 reco/
   app/
     __init__.py
     main.py
-    config.py
-    instrumentation.py
-    models.py          # 내부 모델(도메인)
-    schemas.py         # Pydantic I/O 스키마
-    services/
-      __init__.py
-      citydata_client.py
-      scoring.py
-      cache.py
-    routers/
-      __init__.py
-      health.py
-      reco.py
-  tests/
-    test_health.py
+    api/__init__.py
+    api/routes.py
+    core/__init__.py
+    core/config.py
+    models/__init__.py
+    models/schemas.py
+    services/__init__.py
+    services/seoul_client.py
+    services/redis_cache.py
+    services/recommend.py
   requirements.txt
-  Dockerfile
   gunicorn_conf.py
-  .env.example
-  Makefile
+  Dockerfile
+  README.md
 ```
+
+**환경변수(초기값/권장):**
+
+| 이름                  | 용도                 | 예시                             |
+| ------------------- | ------------------ | ------------------------------ |
+| `API_BASE_URL`      | 내부 게이트웨이 주소        | `https://api.koreaaimap.com`   |
+| `SEOUL_GENERAL_KEY` | (백업) 서울시 OpenAPI 키 | `…`                            |
+| `REDIS_URL`         | 캐시(선택)             | `rediss://:token@host:6379/0`  |
+| `CACHE_TTL_SECONDS` | 기본 TTL             | `60`                           |
+| `RATE_LIMIT_MS`     | 외부호출 간격            | `700`                          |
 
 ---
 
-## 핵심 파일들
+## 3) 최소 동작 FastAPI 코드
 
-### 1) `app/config.py` — 설정/환경변수
+#### `app/core/config.py`
 
 ```python
-# app/config.py
-from pydantic_settings import BaseSettings
-from pydantic import AnyHttpUrl
-from typing import Optional
+from pydantic import BaseModel
+import os
 
-class Settings(BaseSettings):
-    # 서비스 공통
-    APP_NAME: str = "koreaaimap-reco"
-    ENV: str = "prod"  # prod|staging|dev|local
-    PORT: int = 9000
-    LOG_LEVEL: str = "INFO"
-
-    # 외부 연동: 우리 API 프록시(스프링) - citydata 엔드포인트
-    CITYDATA_BASE_URL: AnyHttpUrl = "https://api.koreaaimap.com"
-
-    # 캐시(옵션): 메모리/Redis 중 선택
-    CACHE_BACKEND: str = "memory"  # memory|redis
-    REDIS_URL: Optional[str] = None # e.g. redis://redis:6379/0
-    CACHE_TTL_SECONDS: int = 60
-
-    # 스코어 가중치
-    WEIGHT_CONGESTION: float = 0.5   # 혼잡도(낮을수록 가산)
-    WEIGHT_TRAVELTIME: float = 0.3   # 이동시간(짧을수록 가산)
-    WEIGHT_EVENTFIT: float = 0.2     # 행사 매칭(사용자 관심과의 적합도)
-
-    class Config:
-        env_file = ".env"
+class Settings(BaseModel):
+    api_base_url: str = os.getenv("API_BASE_URL", "https://api.koreaaimap.com")
+    seoul_key: str | None = os.getenv("SEOUL_GENERAL_KEY")
+    redis_url: str | None = os.getenv("REDIS_URL")
+    cache_ttl: int = int(os.getenv("CACHE_TTL_SECONDS", "60"))
+    rate_limit_ms: int = int(os.getenv("RATE_LIMIT_MS", "700"))
+    service_name: str = "koreaaimap-reco"
+    version: str = "0.1.0"
 
 settings = Settings()
 ```
 
-### 2) `app/instrumentation.py` — 로깅/메트릭 미들웨어
+#### `app/models/schemas.py`
 
 ```python
-# app/instrumentation.py
-import time, logging
-from fastapi import Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware
+from typing import List, Optional, Literal
+from pydantic import BaseModel
 
-logger = logging.getLogger("reco")
-
-class AccessLogMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        start = time.perf_counter()
-        try:
-            response: Response = await call_next(request)
-            return response
-        finally:
-            elapsed = (time.perf_counter() - start) * 1000
-            logger.info(
-                "method=%s path=%s status=%s rt_ms=%.1f ua=%s",
-                request.method, request.url.path,
-                getattr(request.state, "status_code", getattr(response, "status_code", "-")),
-                elapsed, request.headers.get("user-agent", "-")
-            )
-```
-
-
-### 3) `app/schemas.py` — 입력/출력 스키마
-
-```python
-# app/schemas.py
-from pydantic import BaseModel, Field, conlist
-from typing import List, Optional
-
-class RecoInput(BaseModel):
-    lat: float = Field(..., description="사용자 위도")
-    lng: float = Field(..., description="사용자 경도")
-    when: str = Field("now", description="추천 시점 (now|iso8601)")
-    interests: Optional[List[str]] = Field(default=None, description="관심사 태그 (예: ['공원','축제'])")
-    limit: int = Field(10, ge=1, le=50, description="반환 개수")
-
-class RecoItem(BaseModel):
-    place_code: str
-    place_name: str
-    score: float
-    distance_m: Optional[int] = None
-    congestion_level: Optional[str] = None
-    travel_time_min: Optional[int] = None
-    event_summary: Optional[str] = None
-
-class RecoResponse(BaseModel):
-    count: int
-    items: conlist(RecoItem, min_length=0)
-    updated_at: str
-```
-
-### 4) `app/models.py` — 내부 도메인 모델(간단)
-
-```python
-# app/models.py
-from dataclasses import dataclass
-from typing import Optional, Dict, Any
-
-@dataclass
-class Citydata:
+class Place(BaseModel):
     code: str
-    name: str
-    raw: Dict[str, Any]  # 원문(필요시 정규화)
+    name: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+class RecommendRequest(BaseModel):
+    user_lat: float
+    user_lng: float
+    purpose: Literal["date","leisure","study","walk","shopping","family","any"] = "any"
+    max_results: int = 5
+    # 후보 POI 코드 목록(초기: 외부에서 주입; 추후 120장소 테이블로 대체)
+    candidates: Optional[List[Place]] = None
+
+class RecommendItem(BaseModel):
+    place: Place
+    score: float
+    features: dict
+
+class RecommendResponse(BaseModel):
+    count: int
+    items: List[RecommendItem]
+    source: str = "Seoul Open Data via internal API"
 ```
 
-### 5) `app/services/cache.py` — 캐시(메모리/Redis)
+#### `app/services/redis_cache.py`
 
 ```python
-# app/services/cache.py
 import time
 from typing import Any, Optional
-from ..config import settings
+from . import typing as _t  # no-op to avoid linter issues
+import json, threading
 
-class MemoryCache:
-    def __init__(self, ttl: int):
-        self.ttl = ttl
-        self.store = {}
+try:
+    import redis
+except ImportError:
+    redis = None
 
-    def get(self, key: str) -> Optional[Any]:
-        v = self.store.get(key)
-        if not v: return None
-        exp, data = v
-        if time.time() > exp:
-            self.store.pop(key, None)
-            return None
-        return data
+class Cache:
+    def __init__(self, url: Optional[str], default_ttl: int = 60):
+        self.default_ttl = default_ttl
+        if url and redis:
+            self.client = redis.Redis.from_url(url, decode_responses=True, socket_timeout=2)
+            self.local = None
+        else:
+            self.client = None
+            self.local = {}
+            self.lock = threading.Lock()
 
-    def set(self, key: str, value: Any):
-        self.store[key] = (time.time() + self.ttl, value)
+    def get(self, key: str) -> Optional[dict]:
+        if self.client:
+            raw = self.client.get(key)
+            return json.loads(raw) if raw else None
+        with self.lock:
+            v = self.local.get(key)
+            if not v: return None
+            if v["exp"] < time.time():
+                self.local.pop(key, None); return None
+            return v["val"]
 
-_cache = MemoryCache(ttl=settings.CACHE_TTL_SECONDS)
-
-def cache_get(key: str):
-    if settings.CACHE_BACKEND == "memory":
-        return _cache.get(key)
-    # Redis 구현 시 확장
-    return None
-
-def cache_set(key: str, value: Any):
-    if settings.CACHE_BACKEND == "memory":
-        _cache.set(key, value)
+    def set(self, key: str, value: dict, ttl: Optional[int] = None):
+        ttl = ttl or self.default_ttl
+        if self.client:
+            self.client.setex(key, ttl, json.dumps(value, ensure_ascii=False))
+        else:
+            with self.lock:
+                self.local[key] = {"val": value, "exp": time.time()+ttl}
 ```
 
-### 6) `app/services/citydata_client.py` — API 프록시 호출
+#### `app/services/seoul_client.py`
 
 ```python
-# app/services/citydata_client.py
-import httpx, asyncio
-from typing import Dict, Any, Optional
-from ..config import settings
-from .cache import cache_get, cache_set
+import httpx, time
+from ..core.config import settings
 
-TIMEOUT = httpx.Timeout(5.0, connect=3.0)
+class SeoulClient:
+    def __init__(self):
+        self.api_base = settings.api_base_url.rstrip("/")
+        self.key = settings.seoul_key
+        self.rate_ms = settings.rate_limit_ms
+        self._last = 0.0
+        self.http = httpx.Client(timeout=8, headers={"User-Agent":"koreaaimap-reco/0.1"})
 
-async def fetch_citydata_by_code(code: str) -> Optional[Dict[str, Any]]:
-    cache_key = f"citydata:{code}"
-    cached = cache_get(cache_key)
-    if cached: return cached
+    def _rl(self):
+        now = time.time()
+        wait = (self._last + self.rate_ms/1000.0) - now
+        if wait > 0: time.sleep(wait)
+        self._last = time.time()
 
-    url = f"{settings.CITYDATA_BASE_URL}/api/v1/citydata"
-    params = {"code": code}
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        r = await client.get(url, params=params)
-        if r.status_code != 200:
-            return None
-        data = r.json()
-        cache_set(cache_key, data)
-        return data
+    def citydata_via_internal(self, *, code: str | None = None, place: str | None = None):
+        """권장 경로: 내부 Spring API 프록시 사용"""
+        assert (code or place) and not (code and place)
+        params = {"code": code} if code else {"place": place}
+        url = f"{self.api_base}/api/v1/citydata"
+        self._rl()
+        r = self.http.get(url, params=params)
+        r.raise_for_status()
+        return r.json()
+
+    def citydata_direct(self, *, code: str):
+        """백업 경로: 서울시 OpenAPI 직접 호출(키 필요, 1회 1장소)"""
+        if not self.key:
+            raise RuntimeError("SEOUL_GENERAL_KEY is not set.")
+        url = f"http://openapi.seoul.go.kr:8088/{self.key}/json/citydata/1/5/{code}"
+        self._rl()
+        r = self.http.get(url)
+        r.raise_for_status()
+        return r.json()
 ```
 
-### 7) `app/services/scoring.py` — 간단 스코어링 로직(가중치 기반)
+#### `app/services/recommend.py`
 
 ```python
-# app/services/scoring.py
-from typing import Dict, Any, Optional, List
-from ..config import settings
+from math import radians, sin, cos, asin, sqrt
+from typing import List, Dict
+from ..models.schemas import Place, RecommendItem
 
-def normalize_congestion(level: Optional[str]) -> float:
-    # 예: '여유' 1.0, '보통' 0.6, '혼잡' 0.2
-    m = {"여유": 1.0, "보통": 0.6, "혼잡": 0.2}
-    return m.get(level or "보통", 0.6)
+def _haversine(lat1, lon1, lat2, lon2):
+    R=6371.0
+    dlat=radians(lat2-lat1); dlon=radians(lon2-lon1)
+    a=sin(dlat/2)**2+cos(radians(lat1))*cos(radians(lat2))*sin(dlon/2)**2
+    return 2*R*asin(sqrt(a))  # km
 
-def normalize_travel_time(mins: Optional[int]) -> float:
-    if mins is None: return 0.5
-    # 10분 이내 1.0 → 60분 0 근사
-    v = max(0.0, 1.0 - (mins/60.0))
-    return round(v, 3)
+def score_place(*, user_lat, user_lng, place: Place, citydata: dict, purpose: str) -> RecommendItem:
+    # 간단한 특징 추출 (초기 규칙 기반)
+    categories = citydata.get("categories", {})
+    ppl = categories.get("population", {})
+    crowd_level = ppl.get("congestionLevel") or ppl.get("level")  # (여유/보통/약간 붐빔/붐빔) -> 매핑
+    level_map = {"여유":0.1, "보통":0.4, "약간 붐빔":0.7, "붐빔":1.0}
+    crowd = level_map.get(str(crowd_level), 0.5)
 
-def event_fit(events: Optional[List[str]], interests: Optional[List[str]]) -> float:
-    if not events or not interests: return 0.5
-    ev = set([e.lower() for e in events])
-    ints = set([i.lower() for i in interests])
-    inter = len(ev & ints)
-    return min(1.0, 0.4 + 0.2*inter)  # 간단한 가점
+    # 거리(가까울수록 가점)
+    dist_km = None
+    if place.lat and place.lng:
+        dist_km = _haversine(user_lat, user_lng, place.lat, place.lng)
+    dist_term = 0.0 if dist_km is None else max(0.0, 1.0 - min(dist_km/10.0, 1.0))  # 0~1
 
-def score_item(congestion_level: Optional[str], travel_time_min: Optional[int],
-               event_tags: Optional[List[str]], interests: Optional[List[str]]) -> float:
-    s = (
-        settings.WEIGHT_CONGESTION * normalize_congestion(congestion_level) +
-        settings.WEIGHT_TRAVELTIME * normalize_travel_time(travel_time_min) +
-        settings.WEIGHT_EVENTFIT   * event_fit(event_tags, interests)
-    )
-    return round(s, 4)
+    # 목적 가중(예: 데이트/실내 선호 등은 이후 확장)
+    purpose_bias = 0.0  # TODO: 날씨/상권 업종/실내·실외 신호 반영 예정
+
+    # 낮을수록 좋은 혼잡도(crowd)는 음수 가중
+    score = 0.60*dist_term + 0.35*(1.0 - crowd) + 0.05*purpose_bias
+    feats = {"dist_km": dist_km, "crowd_raw": crowd_level, "crowd_norm": crowd, "dist_term": dist_term}
+    return RecommendItem(place=place, score=round(score,4), features=feats)
 ```
 
-### 8) `app/routers/health.py` — 헬스/레디니스/버전
+#### `app/api/routes.py`
 
 ```python
-# app/routers/health.py
-from fastapi import APIRouter
-import os
+from fastapi import APIRouter, HTTPException, Query
+from ..core.config import settings
+from ..services.seoul_client import SeoulClient
+from ..services.redis_cache import Cache
+from ..models.schemas import RecommendRequest, RecommendResponse, RecommendItem, Place
 
-router = APIRouter(prefix="", tags=["health"])
+router = APIRouter()
+client = SeoulClient()
+cache = Cache(settings.redis_url, default_ttl=settings.cache_ttl)
 
 @router.get("/health")
-async def health():
-    return {"status": "ok"}
+def health():
+    return {"status":"ok","service":settings.service_name,"version":settings.version}
 
-@router.get("/ready")
-async def ready():
-    # 외부 의존성(예: Redis 또는 우리 API)에 대한 간단 체크 가능
-    return {"status": "ready"}
+@router.get("/v1/ping")
+def ping():
+    return {"pong": True}
 
-@router.get("/version")
-async def version():
-    return {
-        "service": "koreaaimap-reco",
-        "revision": os.getenv("GIT_SHA", "local"),
-    }
-```
+@router.get("/v1/citydata")
+def citydata(code: str | None = Query(None), place: str | None = Query(None)):
+    if not ((code or place) and not (code and place)):
+        raise HTTPException(400, "Provide exactly one of code or place")
+    key = f"citydata:{code or place}"
+    cached = cache.get(key)
+    if cached: return cached
+    try:
+        data = client.citydata_via_internal(code=code, place=place)
+    except Exception:
+        if code:
+            data = client.citydata_direct(code=code)  # fallback
+        else:
+            raise
+    cache.set(key, data)
+    return data
 
-### 9) `app/routers/reco.py` — 추천 API
-
-```python
-# app/routers/reco.py
-from fastapi import APIRouter, HTTPException, Query
-from typing import List, Optional
-from ..schemas import RecoInput, RecoResponse, RecoItem
-from ..services.citydata_client import fetch_citydata_by_code
-from ..services.scoring import score_item
-from datetime import datetime, timezone
-
-# 샘플: 우선 5개 POI로 데모(운영에서는 120개 테이블/DB에서 로드)
-DEFAULT_POIS = [
-    ("POI104","어린이대공원"),
-    ("POI088","광화문광장"),
-    ("POI071","압구정로데오거리"),
-    ("POI105","여의도한강공원"),
-    ("POI068","성수카페거리"),
-]
-
-router = APIRouter(prefix="/reco", tags=["reco"])
-
-@router.get("/suggestions", response_model=RecoResponse)
-async def suggestions(
-    lat: float, lng: float,
-    when: str = "now",
-    interests: Optional[List[str]] = Query(default=None),
-    limit: int = Query(10, ge=1, le=50),
-):
-    # 1) 후보 장소(운영: DB/캐시에서 120개 로드 및 가까운 순 샘플링)
-    candidates = DEFAULT_POIS
-
-    # 2) 각 후보에 대해 citydata 조회 & 간단 feature 추출
-    items: List[RecoItem] = []
-    for code, name in candidates:
-        data = await fetch_citydata_by_code(code)
-        if not data:
+@router.post("/v1/recommend", response_model=RecommendResponse)
+def recommend(payload: RecommendRequest):
+    # 후보가 없으면 일단 대표 샘플로 동작(POI104=어린이대공원)
+    candidates = payload.candidates or [Place(code="POI104", name="어린이대공원")]
+    items: list[RecommendItem] = []
+    for p in candidates:
+        try:
+            data = citydata(code=p.code)  # 로컬 핸들러 호출(캐시 포함)
+            # 위치 좌표가 있으면 점수 정확도↑ (초기는 옵션)
+            # p.lat, p.lng 를 향후 120장소 메타테이블에서 채움
+            from ..services.recommend import score_place
+            items.append(score_place(user_lat=payload.user_lat, user_lng=payload.user_lng,
+                                     place=p, citydata=data, purpose=payload.purpose))
+        except Exception as e:
+            # 한 항목 실패해도 나머지는 진행
             continue
-        # 아래는 예시: 실제 구조에 맞게 파싱(혼잡도/이동시간/행사태그)
-        categories = data.get("categories") or data  # 프록시 구현에 따라
-        congestion_level = (categories.get("population", {}) or {}).get("level") if isinstance(categories, dict) else None
-        travel_time_min = (categories.get("traffic", {}) or {}).get("eta_min") if isinstance(categories, dict) else None
-        event_tags = (categories.get("events", {}) or {}).get("tags") if isinstance(categories, dict) else None
-
-        score = score_item(congestion_level, travel_time_min, event_tags, interests)
-        items.append(RecoItem(
-            place_code=code, place_name=name,
-            score=score,
-            distance_m=None,               # TODO: 실제 거리 계산 로직(하버사인)
-            congestion_level=congestion_level,
-            travel_time_min=travel_time_min,
-            event_summary=None
-        ))
-
-    # 3) 스코어 내림차순 정렬 + 상위 N
-    items = sorted(items, key=lambda x: x.score, reverse=True)[:limit]
-    return RecoResponse(
-        count=len(items),
-        items=items,
-        updated_at=datetime.now(timezone.utc).isoformat()
-    )
+    items.sort(key=lambda x: x.score, reverse=True)
+    items = items[: payload.max_results]
+    return RecommendResponse(count=len(items), items=items)
 ```
 
-### 10) `app/main.py` — FastAPI 앱 조립
+#### `app/main.py`
 
 ```python
-# app/main.py
-import logging, uvicorn
 from fastapi import FastAPI
-from .config import settings
-from .instrumentation import AccessLogMiddleware
-from .routers import health, reco
+from .api.routes import router
 
-logging.basicConfig(
-    level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
-
-app = FastAPI(
-    title="koreaaimap-reco",
-    version="1.0.0",
-    docs_url="/reco/docs",
-    openapi_url="/reco/openapi.json",
-    redoc_url=None,
-)
-
-# 미들웨어/라우터
-app.add_middleware(AccessLogMiddleware)
-app.include_router(health.router)
-app.include_router(reco.router)
-
-if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=settings.PORT, workers=1)
+app = FastAPI(title="KoreaAIMap RECO", version="0.1.0")
+app.include_router(router, prefix="/reco")
 ```
 
----
-
-## 컨테이너/배포
-
-### `requirements.txt`
+#### `requirements.txt`
 
 ```
 fastapi==0.115.0
-uvicorn[standard]==0.30.6
+uvicorn[standard]==0.30.5
 httpx==0.27.2
-pydantic==2.9.1
-pydantic-settings==2.5.2
+redis==5.0.8
 ```
 
+#### `gunicorn_conf.py`
 
-### `Dockerfile`
+```python
+workers = 2
+worker_class = "uvicorn.workers.UvicornWorker"
+bind = "0.0.0.0:9000"
+timeout = 30
+```
+
+#### `Dockerfile`
 
 ```dockerfile
 FROM python:3.11-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
-## 시스템 의존 패키지(필요 시 curl/ca-certificates 등)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates && rm -rf /var/lib/apt/lists/*
-
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
+
+RUN pip install --no-cache-dir --upgrade pip
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
-COPY gunicorn_conf.py ./
+COPY gunicorn_conf.py .
 
 EXPOSE 9000
-# prod: gunicorn + uvicorn worker (ALB 타임아웃 고려해 keepalive 설정)
 CMD ["gunicorn", "-c", "gunicorn_conf.py", "app.main:app"]
-```
-
-### `gunicorn_conf.py`
-
-```python
-bind = "0.0.0.0:9000"
-workers = 2                   # Fargate 1vCPU/3GB 기준
-worker_class = "uvicorn.workers.UvicornWorker"
-timeout = 30
-graceful_timeout = 30
-keepalive = 5
-accesslog = "-"
-errorlog = "-"
-```
-
-### `.env.example`
-
-```
-ENV=prod
-PORT=9000
-CITYDATA_BASE_URL=https://api.koreaaimap.com
-CACHE_BACKEND=memory
-CACHE_TTL_SECONDS=60
-WEIGHT_CONGESTION=0.5
-WEIGHT_TRAVELTIME=0.3
-WEIGHT_EVENTFIT=0.2
-```
-
-### `Makefile`
-
-```makefile
-IMAGE?=koreaaimap-reco:latest
-
-run:
-\tuvicorn app.main:app --host 0.0.0.0 --port 9000 --reload
-
-build:
-\tdocker build --platform linux/amd64 -t $(IMAGE) .
-
-serve:
-\tdocker run --rm -p 9000:9000 --env-file .env $(IMAGE)
 ```
 
 ---
 
+## 4) ALB / ECS 연결값(운영 기준)
+
+* **Target Group (tg-reco):** Port **9000**, Health check **`/health`**, 200 OK 기대.
+* **Listener Rule:** HTTPS(443) **우선순위 1: `/reco/*` → tg-reco** (+ 정확일치 `/reco`도 추가 권장)&#x20;
+* **Task Definition(예시):** `koreaaimap-reco:1` / Linux x86\_64 / awsvpc / **CPU 1024 / MEM 2048** / 컨테이너 포트 9000 / **로그: /ecs/koreaaimap-reco** / 헬스체크(CMD-SHELL):
+
+  ```
+  curl -f http://localhost:9000/reco/health || exit 1
+  ```
+
+  (Interval 30s / Timeout 5s / Retries 3 / StartPeriod 45s) &#x20;
+* **Service:** `koreaaimap-reco-svc` / 프라이빗 2AZ / Public IP Off / SG(인바운드 9000 from alb-sg). &#x20;
+
+> 주의사항: `/reco/*`만 있고 \*\*정확일치 `/reco`\*\*가 없으면 루트 접근에서 404가 날 수 있음. 
+
+---
+
+## 5) CI/CD (GitHub Actions) — `/.github/workflows/deploy-reco.yml`
+
+```yaml
+name: Deploy RECO (FastAPI)
+
+on:
+  push:
+    paths:
+      - "reco/**"
+      - ".github/workflows/deploy-reco.yml"
+    branches: [ "main" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ap-northeast-2
+      ECR_REPO: ${{ secrets.ECR_RECO_REPO }}   # e.g. 3304....dkr.ecr.ap-northeast-2.amazonaws.com/koreaaimap-reco
+      CLUSTER: koreaaimap
+      SERVICE: koreaaimap-reco-svc
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & Push image
+        working-directory: ./reco
+        run: |
+          docker build --platform linux/amd64 -t "$ECR_REPO:latest" -t "$ECR_REPO:$IMAGE_TAG" .
+          docker push "$ECR_REPO:latest"
+          docker push "$ECR_REPO:$IMAGE_TAG"
+
+      - name: Update ECS Service (force new deployment)
+        run: |
+          aws ecs update-service \
+            --cluster "$CLUSTER" \
+            --service "$SERVICE" \
+            --force-new-deployment \
+            --region "$AWS_REGION"
+```
+
+> OIDC/레포 시크릿/역할 구조는 스캐폴드 가이드의 CI/CD 절과 동일하게 맞춰져있음. `AWS_ROLE_ARN`, `ECR_RECO_REPO`만 등록하면 됨.&#x20;
+
+---
+
+## 6) Postman & OpenAPI (RECO 추가)
+
+
+#### Postman 아이템(추가 예)
+
+* **`RECO — /reco/health`** → 200/`status=ok`
+* **`RECO — /reco/v1/recommend`** (POST)
+  Body(raw/JSON):
+
+  ```json
+  {
+    "user_lat": 37.549,
+    "user_lng": 127.074,
+    "purpose": "date",
+    "max_results": 3,
+    "candidates": [{"code":"POI104","name":"어린이대공원"}]
+  }
+  ```
+
+#### RECO OpenAPI 스니펫(병합용)
+
+```yaml
+paths:
+  /reco/health:
+    get:
+      summary: Health
+      responses: { '200': { description: OK } }
+
+  /reco/v1/recommend:
+    post:
+      summary: Recommend places
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecommendRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendResponse'
+
+components:
+  schemas:
+    Place:
+      type: object
+      properties:
+        code: { type: string }
+        name: { type: string }
+        lat: { type: number }
+        lng: { type: number }
+    RecommendRequest:
+      type: object
+      required: [user_lat,user_lng]
+      properties:
+        user_lat: { type: number }
+        user_lng: { type: number }
+        purpose: { type: string, enum: [date,leisure,study,walk,shopping,family,any] }
+        max_results: { type: integer, default: 5 }
+        candidates:
+          type: array
+          items: { $ref: '#/components/schemas/Place' }
+    RecommendResponse:
+      type: object
+      properties:
+        count: { type: integer }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              place: { $ref: '#/components/schemas/Place' }
+              score: { type: number }
+              features: { type: object }
+        source: { type: string }
+```
+
+
+---
+
+## 7) 운영 체크리스트(초기 런칭용)
+
+1. **ECR**에 `koreaaimap-reco:latest` 푸시
+2. **Task Definition** 등록(포트 9000 / 헬스커맨드 / 로그 그룹) → **Service 생성**(Private Subnets, Public IP Off)
+3. **ALB 규칙** `/reco/* → tg-reco` + **정확일치 `/reco` 추가** → 헬스 200 확인 &#x20;
+4. **DNS**에서 `reco.koreaaimap.com → ALB`(선택), 운영 시 Cloudflare **Full(Strict)** + SG를 CF IP로 축소(옵션 WAF) &#x20;
+5. **캐시/레이트리밋**: TTL 60s, 호출 간격 700ms(배치/백엔드)  &#x20;
+6. **출처·주요 주의표기**: 공공누리 출처표시 / 인구·상권 데이터의 처리·지연·주의사항 UI/문서 고정 표기  &#x20;
+
+---
+
+## 8) 로컬 스모크 & 운영 점검
+
+```bash
+# 로컬
+uvicorn app.main:app --host 0.0.0.0 --port 9000
+curl -s http://127.0.0.1:9000/reco/health
+curl -s http://127.0.0.1:9000/reco/v1/citydata?code=POI104 | jq '.place,.updatedAt'
+curl -s -X POST http://127.0.0.1:9000/reco/v1/recommend \
+  -H "content-type: application/json" \
+  -d '{"user_lat":37.55,"user_lng":127.07,"candidates":[{"code":"POI104","name":"어린이대공원"}]}'
+
+# 운영 (ALB 뒤)
+curl -I https://api.koreaaimap.com/reco/health
+curl -s https://api.koreaaimap.com/reco/v1/citydata?code=POI104 | jq '.place,.updatedAt'
+```
+
+---
+
+## 9) 이후 확장(간단 로드맵)
+
+* **120장소 메타테이블**(코드/이름/좌표/카테고리) 주입 → `Place.lat/lng`로 거리 정확도↑.
+* **상황인지 가중치**: 날씨(실내/실외), 시간대, 상권·교통 신호 반영. (매뉴얼 정의 따라 혼잡도·상권 범주 사용)&#x20;
+* **예측/ML**: 12시간 예측 신호(Seq2Seq/Informer 등) 가중 반영 후 ONNX 서빙. (학습·성능 목표는 설계서와 일치)&#x20;
+
+---
+
+### 문서/설계와의 정합성 체크
+
+* **아키텍처·경로 규칙·헬스**: ALB 443, `/reco/* → reco-service`, 헬스 `/health`. `/reco` 규칙 생각하기.&#x20;
+* **내부 프록시 표준화/TTL 60s/키 보호**: 프런트는 내부 게이트웨이만 호출, 캐시/정규화 응답.&#x20;
+* **수집 스크립트 베이스라인(0.7s 레이트리밋)**: 배치·수집 시 동일 규칙 고려.&#x20;
+* **데이터 갱신·주의·혼잡도 정의**: 5분 단위 수집/약 15분 처리 지연, 혼잡도 산정/주의 표기.&#x20;
+
+---
 
