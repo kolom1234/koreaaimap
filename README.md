@@ -15,7 +15,7 @@
 # RECO(FastAPI) 골격
 
 
-# 0) 핵심 사양(요약)
+## 0) 핵심 사양(요약)
 
 * **런타임/포트**: FastAPI + Gunicorn(UvicornWorker), **:9000**
 * **헬스체크**: `GET /reco/health` → **200 OK**
@@ -27,7 +27,7 @@
 
 ---
 
-# 1) 디렉터리 구조
+## 1) 디렉터리 구조
 
 ```
 reco/
@@ -52,7 +52,7 @@ reco/
 
 ---
 
-# 2) 환경변수(운영 기본값)
+## 2) 환경변수(운영 기본값)
 
 | ENV                 |    필수 | 예시                           | 설명                     |
 | ------------------- | ----: | ---------------------------- | ---------------------- |
@@ -65,9 +65,9 @@ reco/
 
 ---
 
-# 3) FastAPI 코드 (운영형 최소구성)
+## 3) FastAPI 코드 (운영형 최소구성)
 
-### `app/core/config.py`
+#### `app/core/config.py`
 
 ```python
 from pydantic import BaseModel
@@ -86,7 +86,7 @@ class Settings(BaseModel):
 settings = Settings()
 ```
 
-### `app/models/schemas.py`
+#### `app/models/schemas.py`
 
 ```python
 from typing import List, Optional, Literal, Dict, Any
@@ -116,7 +116,7 @@ class RecommendResponse(BaseModel):
     source: str = "Seoul Open Data via internal API"
 ```
 
-### `app/services/cache.py`
+#### `app/services/cache.py`
 
 ```python
 import time, json, threading
@@ -157,7 +157,7 @@ class Cache:
                 self.local[key] = {"val": value, "exp": time.time()+ttl}
 ```
 
-### `app/services/seoul_client.py`
+#### `app/services/seoul_client.py`
 
 ```python
 import httpx, time
@@ -194,7 +194,7 @@ class SeoulClient:
         return r.json()
 ```
 
-### `app/services/recommend.py`
+#### `app/services/recommend.py`
 
 ```python
 from math import radians, sin, cos, asin, sqrt
@@ -225,7 +225,7 @@ def score_place(*, user_lat, user_lng, place: Place, citydata: dict, purpose: st
     return RecommendItem(place=place, score=round(score,4), features=feats)
 ```
 
-### `app/api/routes.py`
+#### `app/api/routes.py`
 
 ```python
 from fastapi import APIRouter, HTTPException, Query
@@ -280,7 +280,7 @@ def recommend(payload: RecommendRequest):
     return RecommendResponse(count=len(items), items=items)
 ```
 
-### `app/main.py`
+#### `app/main.py`
 
 ```python
 from fastapi import FastAPI
@@ -294,7 +294,7 @@ app.include_router(router, prefix="/reco")
 
 # 4) 종속성, 서버, 도커
 
-### `requirements.txt`
+#### `requirements.txt`
 
 ```
 fastapi==0.115.0
@@ -303,7 +303,7 @@ httpx==0.27.2
 redis==5.0.8
 ```
 
-### `gunicorn_conf.py`
+#### `gunicorn_conf.py`
 
 ```python
 workers = 2
@@ -312,7 +312,7 @@ bind = "0.0.0.0:9000"
 timeout = 30
 ```
 
-### `Dockerfile` (슬림·비루트)
+#### `Dockerfile` (슬림·비루트)
 
 ```dockerfile
 FROM python:3.11-slim
@@ -338,7 +338,7 @@ CMD ["gunicorn", "-c", "gunicorn_conf.py", "app.main:app"]
 
 ---
 
-# 5) ECS 태스크/서비스 파라미터(정확값)
+## 5) ECS 태스크/서비스 파라미터(정확값)
 
 * **Task Definition**: `koreaaimap-reco:1`
 
@@ -376,7 +376,7 @@ CMD ["gunicorn", "-c", "gunicorn_conf.py", "app.main:app"]
 
 ---
 
-# 6) 배포(수동) 스니펫
+## 6) 배포(수동) 스니펫
 
 ```bash
 # ECR 로그인
@@ -399,7 +399,7 @@ aws ecs update-service \
 
 ---
 
-# 7) CI/CD (GitHub Actions) — `/.github/workflows/deploy-reco.yml`
+## 7) CI/CD (GitHub Actions) — `/.github/workflows/deploy-reco.yml`
 
 ```yaml
 name: Deploy RECO (FastAPI)
@@ -455,7 +455,7 @@ jobs:
 
 ---
 
-# 8) OpenAPI(YAML) — RECO 섹션(병합용)
+## 8) OpenAPI(YAML) — RECO 섹션(병합용)
 
 ```yaml
 paths:
@@ -533,7 +533,7 @@ components:
 
 ---
 
-# 9) Postman 컬렉션(추가 아이템 최소)
+## 9) Postman 컬렉션(추가 아이템 최소)
 
 * **RECO — /reco/health (GET)**
   Tests:
@@ -565,7 +565,7 @@ components:
 
 ---
 
-# 10) 점검 체크리스트 (런칭 직전)
+## 10) 점검 체크리스트 (런칭 직전)
 
 1. **ECR**: `koreaaimap-reco:latest` 존재
 2. **ECS Task**: 포트 9000, 헬스 커맨드 적용, 로그 그룹 `/ecs/koreaaimap-reco`
