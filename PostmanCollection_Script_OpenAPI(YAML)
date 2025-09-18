@@ -1,75 +1,110 @@
-import json, os, textwrap, datetime, pathlib
+import json, os, pathlib, datetime, textwrap, sys
 
 base_dir = "/mnt/data"
 os.makedirs(base_dir, exist_ok=True)
 
-# 1) Postman collection
+# Prepare Postman collection JSON with strict tests and encoding
 postman = {
   "info": {
     "name": "Seoul Citydata — Real-time 120 Places",
     "_postman_id": "a3b3df04-2e72-4f8a-b4e8-120-seoul-citydata",
-    "description": "Postman collection to call Seoul Real-time Citydata API and your internal proxy.",
+    "description": "Postman collection to call Seoul Real-time Citydata API (official) and your internal proxy with strict tests.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {"key": "SEOUL_GENERAL_KEY", "value": ""},
     {"key": "base_city", "value": "http://openapi.seoul.go.kr:8088/{{SEOUL_GENERAL_KEY}}/json"},
-    {"key": "base_internal", "value": "https://api.koreaaimap.com"}
+    {"key": "base_internal", "value": "https://api.koreaaimap.com"},
+    {"key": "place", "value": "광화문·덕수궁"},
+    {"key": "code", "value": "POI104"}
   ],
   "item": [
     {
       "name": "Citydata by PLACE (name) — 샘플: 광화문·덕수궁",
+      "event": [
+        {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+          "const p = pm.variables.get('place') || '';",
+          "pm.variables.set('placeEncoded', encodeURIComponent(p));"
+        ]}},
+        {"listen": "test", "script": {"type": "text/javascript", "exec": [
+          "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+          "let b; try { b = pm.response.json(); } catch(e){ pm.expect.fail('JSON parse error: ' + e); }",
+          "pm.test('Body present', function(){ pm.expect(b).to.exist; });",
+          "const res = (b.RESULT || b.result || {});",
+          "pm.test('RESULT.CODE == INFO-000', function(){ pm.expect(res.CODE || res.code).to.eql('INFO-000'); });"
+        ]}}
+      ],
       "request": {
         "method": "GET",
-        "url": "{{base_city}}/citydata/1/5/{{place}}",
+        "url": "{{base_city}}/citydata/1/5/{{placeEncoded}}",
         "description": "장소명(place)로 호출합니다. 반드시 URL 인코딩 필요. 샘플키는 '광화문·덕수궁'만 응답합니다."
-      },
-      "event": [{
-        "listen": "test",
-        "script": {"exec": [
-          "pm.test('HTTP 200', () => pm.response.code === 200);",
-          "let b; try { b = pm.response.json(); } catch(e){ pm.expect.fail('JSON parse error'); }",
-          "pm.test('Body present', () => pm.expect(b).to.exist);"
-        ], "type": "text/javascript"}
-      }]
+      }
     },
     {
       "name": "Citydata by CODE (POI) — 샘플: POI104(어린이대공원)",
+      "event": [
+        {"listen": "test", "script": {"type": "text/javascript", "exec": [
+          "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+          "let b; try { b = pm.response.json(); } catch(e){ pm.expect.fail('JSON parse error: ' + e); }",
+          "pm.test('Body present', function(){ pm.expect(b).to.exist; });",
+          "const res = (b.RESULT || b.result || {});",
+          "pm.test('RESULT.CODE == INFO-000', function(){ pm.expect(res.CODE || res.code).to.eql('INFO-000'); });"
+        ]}}
+      ],
       "request": {
         "method": "GET",
         "url": "{{base_city}}/citydata/1/5/{{code}}",
         "description": "장소코드(code)로 호출합니다. 예: POI104=어린이대공원"
-      },
-      "event": [{
-        "listen": "test",
-        "script": {"exec": [
-          "pm.test('HTTP 200', () => pm.response.code === 200);",
-          "let b; try { b = pm.response.json(); } catch(e){ pm.expect.fail('JSON parse error'); }",
-          "pm.test('Body present', () => pm.expect(b).to.exist);"
-        ], "type": "text/javascript"}
-      }]
+      }
+    },
+    {
+      "name": "Citydata (인구 서브셋) by PLACE — citydata_ppltn",
+      "event": [
+        {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+          "const p = pm.variables.get('place') || '';",
+          "pm.variables.set('placeEncoded', encodeURIComponent(p));"
+        ]}},
+        {"listen": "test", "script": {"type": "text/javascript", "exec": [
+          "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+          "let b; try { b = pm.response.json(); } catch(e){ pm.expect.fail('JSON parse error: ' + e); }",
+          "pm.test('Body present', function(){ pm.expect(b).to.exist; });",
+          "const res = (b.RESULT || b.result || {});",
+          "pm.test('RESULT.CODE == INFO-000', function(){ pm.expect(res.CODE || res.code).to.eql('INFO-000'); });"
+        ]}}
+      ],
+      "request": {
+        "method": "GET",
+        "url": "{{base_city}}/citydata_ppltn/1/5/{{placeEncoded}}",
+        "description": "인구 서브셋. 샘플키로는 '광화문·덕수궁'만 응답합니다."
+      }
     },
     {
       "name": "Internal Proxy — /api/v1/citydata?code=POI104",
+      "event": [
+        {"listen": "test", "script": {"type": "text/javascript", "exec": [
+          "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+          "let b; try { b = pm.response.json(); } catch(e){ pm.expect.fail('JSON parse error: ' + e); }",
+          "pm.test('Normalized shape', function(){",
+          "  pm.expect(b).to.have.property('place');",
+          "  pm.expect(b).to.have.property('updatedAt');",
+          "  pm.expect(b).to.have.property('categories');",
+          "});"
+        ]}}
+      ],
       "request": {
         "method": "GET",
         "url": "{{base_internal}}/api/v1/citydata?code=POI104",
         "description": "우리 백엔드 프록시를 통해 호출합니다(권장). 키는 서버에서만 보관."
-      },
-      "event": [{
-        "listen": "test",
-        "script": {"exec": [
-          "pm.test('HTTP 200', () => pm.response.code === 200);"
-        ], "type": "text/javascript"}
-      }]
+      }
     }
   ]
 }
+
 postman_path = os.path.join(base_dir, "seoul_citydata.postman_collection.json")
 with open(postman_path, "w", encoding="utf-8") as f:
     json.dump(postman, f, ensure_ascii=False, indent=2)
 
-# 2) Bash script
+# Bash script with jq optional check and retry
 bash_script = """#!/usr/bin/env bash
 # Bulk fetch Seoul citydata for 120 places.
 # Usage:
@@ -91,16 +126,43 @@ fi
 OUTDIR="./out/$(date +%F-%H%M%S)"
 mkdir -p "$OUTDIR"
 
+TYPE="${TYPE:-json}"
+BASE_URL="http://openapi.seoul.go.kr:8088/${SEOUL_GENERAL_KEY}/${TYPE}/citydata/1/5"
+
+has_jq=0
+if command -v jq >/dev/null 2>&1; then has_jq=1; fi
+
 rate_limit() { sleep 0.7; }  # adjust if needed
 
 # Skip BOM and header safely
 tail -n +2 "$CSV" | while IFS=',' read -r CODE NAME; do
-  CODE=$(echo "$CODE" | sed 's/\\r//g' | xargs)
-  NAME=$(echo "$NAME" | sed 's/\\r//g' | xargs)
+  CODE=$(echo "$CODE" | tr -d '\r' | xargs)
+  NAME=$(echo "$NAME" | tr -d '\r' | xargs)
+
   [ -z "$CODE" ] && continue
-  URL="http://openapi.seoul.go.kr:8088/${SEOUL_GENERAL_KEY}/json/citydata/1/5/${CODE}"
+
+  URL="${BASE_URL}/${CODE}"
+  OUT="${OUTDIR}/${CODE}.json"
+
   echo "[CALL] $CODE $NAME"
-  curl -sS "$URL" -o "${OUTDIR}/${CODE}.json" || echo "[WARN] curl failed for $CODE" >&2
+  ok=0
+  for attempt in 1 2 3; do
+    if curl -sS "$URL" -o "$OUT"; then
+      if [ $has_jq -eq 1 ]; then
+        CODEVAL=$(jq -r '.RESULT.CODE // .result.code // empty' "$OUT")
+        if [ "$CODEVAL" = "INFO-000" ]; then ok=1; break; fi
+        echo "[WARN] RESULT=$CODEVAL (try $attempt) $CODE" >&2
+      else
+        ok=1  # Without jq we can't check RESULT; accept but note in logs
+        break
+      fi
+    else
+      echo "[WARN] curl failed for $CODE (try $attempt)" >&2
+    fi
+    sleep $(( attempt ))
+  done
+
+  if [ $ok -ne 1 ]; then echo "[ERROR] Failed (RESULT not OK) $CODE" >&2; fi
   rate_limit
 done
 
@@ -111,7 +173,7 @@ with open(bash_path, "w", encoding="utf-8") as f:
     f.write(bash_script)
 os.chmod(bash_path, 0o755)
 
-# 3) Python script
+# Python script (with Retry, RESULT parsing)
 py_script = r'''#!/usr/bin/env python3
 """
 Bulk fetch Seoul Real-time Citydata by POI code.
@@ -122,8 +184,11 @@ Usage:
 Outputs:
   citydata_snapshot.jsonl  (one JSON object per line)
 """
-import os, sys, time, json, pathlib
+import os, sys, time, json, pathlib, datetime
 import pandas as pd
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 KEY = os.environ.get("SEOUL_GENERAL_KEY")
 if not KEY:
@@ -166,9 +231,12 @@ if not name_col and len(df.columns) > 1:
     name_col = df.columns[1]
 
 records = []
-import requests
+
 session = requests.Session()
-session.headers.update({"User-Agent": "koreaaimap-citydata/1.0"})
+session.headers.update({"User-Agent": "koreaaimap-citydata/1.1"})
+retry = Retry(total=3, backoff_factor=0.8, status_forcelist=[429,500,502,503,504])
+session.mount("http://", HTTPAdapter(max_retries=retry))
+session.mount("https://", HTTPAdapter(max_retries=retry))
 
 for _, r in df.iterrows():
     code = str(r[code_col]).strip()
@@ -176,13 +244,40 @@ for _, r in df.iterrows():
     if not code or code.lower() == "nan":
         continue
     url = f"http://openapi.seoul.go.kr:8088/{KEY}/json/citydata/1/5/{code}"
+    fetched_at = datetime.datetime.utcnow().isoformat() + "Z"
     try:
         res = session.get(url, timeout=8)
-        ok = (res.status_code == 200)
-        body = res.json() if ok else {"_non_json": res.text}
-        records.append({"code": code, "name": name, "status": res.status_code, "raw": body})
+        content_type = res.headers.get("Content-Type","").lower()
+        if "json" in content_type:
+            body = res.json()
+        else:
+            try:
+                body = res.json()
+            except Exception:
+                body = {"_non_json": res.text}
+
+        result = (body.get("RESULT") or body.get("result") or {})
+        result_code = (result.get("CODE") or result.get("code"))
+        result_msg = (result.get("MESSAGE") or result.get("message"))
+        ok = (res.status_code == 200 and result_code == "INFO-000")
+
+        records.append({
+            "code": code,
+            "name": name,
+            "status": res.status_code,
+            "ok": ok,
+            "resultCode": result_code,
+            "resultMsg": result_msg,
+            "raw": body,
+            "fetchedAt": fetched_at
+        })
     except Exception as e:
-        records.append({"code": code, "name": name, "error": str(e)})
+        records.append({
+            "code": code,
+            "name": name,
+            "error": str(e),
+            "fetchedAt": fetched_at
+        })
     time.sleep(0.7)  # rate limit
 
 with open("citydata_snapshot.jsonl", "w", encoding="utf-8") as f:
@@ -196,14 +291,14 @@ with open(py_path, "w", encoding="utf-8") as f:
     f.write(py_script)
 os.chmod(py_path, 0o755)
 
-# 4) OpenAPI YAML
+# OpenAPI YAML (enhanced)
 openapi_yaml = """openapi: 3.0.3
 info:
   title: KoreaAIMap Citydata Proxy
-  version: 1.0.0
+  version: 1.1.0
   description: >
     Internal proxy that fetches Seoul 'citydata' for a single place (by code or name),
-    applies caching and returns a normalized JSON.
+    validates upstream RESULT, applies caching and returns a normalized JSON.
 servers:
   - url: https://api.koreaaimap.com
 paths:
@@ -211,8 +306,8 @@ paths:
     get:
       summary: Get real-time citydata for a place
       description: >
-        Provide either a `code` (POI code, e.g., POI104) or `place` (Korean place name, e.g., 어린이대공원).
-        Exactly one of them must be provided.
+        Provide exactly one of: `code` (POI code, e.g., POI104) OR `place` (Korean place name, e.g., 어린이대공원).
+        Upstream is Seoul Open Data (citydata), which returns application-level RESULT codes (e.g., INFO-000).
       parameters:
         - name: code
           in: query
@@ -229,6 +324,13 @@ paths:
       responses:
         '200':
           description: OK
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              example: max-age=60, public
+            X-Source:
+              schema: { type: string }
+              example: Seoul Open Data Plaza - citydata
           content:
             application/json:
               schema:
@@ -245,9 +347,59 @@ paths:
                     additionalProperties: true
                   source: { type: string, example: Seoul Open Data Plaza }
         '400':
-          description: Bad Request (missing both `code` and `place`)
+          description: Bad Request (must provide exactly one of `code` or `place`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Unknown place/code
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Rate limited by proxy
+          headers:
+            Retry-After:
+              schema: { type: integer }
+              description: seconds to wait before retry
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '502':
           description: Upstream error from Seoul Open Data
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '504':
+          description: Upstream timeout from Seoul Open Data
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+components:
+  schemas:
+    Error:
+      type: object
+      required: [status, error]
+      properties:
+        status:
+          type: integer
+          example: 502
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, example: "UPSTREAM_ERROR" }
+            message: { type: string, example: "Seoul OpenAPI failed" }
+        meta:
+          type: object
+          properties:
+            upstreamResult:
+              type: object
+              description: Original RESULT block (CODE, MESSAGE) from Seoul response, if any.
+              additionalProperties: true
+            requestId:
+              type: string
+              description: Correlation ID for tracing
 """
 openapi_path = os.path.join(base_dir, "koreaaimap-citydata-proxy.yaml")
 with open(openapi_path, "w", encoding="utf-8") as f:
