@@ -590,8 +590,245 @@ components:
      -H 'content-type: application/json' \
      -d '{"user_lat":37.55,"user_lng":127.07,"candidates":[{"code":"POI104"}]}'
    ```
-
+# KoreaAiMap — Logical/Physical ERD (PostgreSQL 16 + PostGIS)
 ---
+```mermaid
+---
+title: KoreaAiMap — Logical/Physical ERD (PostgreSQL 16 + PostGIS)
+---
+
+erDiagram
+  %% ============================================================
+  %% CORE (기준 정보)
+  %% ============================================================
+  CORE_POI {
+    text        poi_code PK                "장소 코드 (예: POI104)"
+    text        name_ko                    "장소명"
+    text        category                   "대분류 (park/palace/commercial/...)" 
+    text        subcategory                "소분류"
+    geometry    boundary                   "MULTIPOLYGON(4326) — 지도 경계"
+    geography   centroid                   "POINT(4326) — 거리/최근접 검색"
+    numeric     area_m2
+    jsonb       props                      "부가 속성(운영 메타/태그 등)"
+    timestamptz created_at
+    timestamptz updated_at
+  }
+
+  DIM_CATEGORY {
+    text        code PK                    "population/commerce/road/transit/parking/ev/bike/weather/events"
+    text        name
+    text        description
+  }
+
+  DIM_TIME_5M {
+    timestamptz ts_utc PK
+    timestamptz ts_kst
+    date        ymd
+    int         hour_0_23
+    int         minute_0_59
+    boolean     is_weekend
+  }
+
+  %% ============================================================
+  %% RAW (원본 수집/보존)
+  %% ============================================================
+  RAW_CITYDATA_INGEST {
+    bigserial   id PK
+    text        src_system                 "seoul-opendata 등"
+    text        poi_code FK
+    text        category                   "DIM_CATEGORY.code"
+    timestamptz observed_at                "관측시각(UTC)"
+    jsonb       payload                    "원본 JSON"
+    bytea       payload_hash               "sha256(raw.payload)"
+    timestamptz received_at                "수집시각"
+  }
+
+  %% ============================================================
+  %% FACT (정규화 스냅샷) — 공통 규칙: PK (poi_code, observed_at)
+  %% 파티셔닝(일 단위) 전제. extras는 원문 보존/스키마 유연성용.
+  %% ============================================================
+
+  FACT_CITYDATA_POP {
+    text        poi_code PK, FK
+    timestamptz observed_at PK
+    int         population_cnt
+    text        congestion                  "ENUM: 여유/보통/약간 붐빔/붐빔/미상"
+    numeric     male_pct                    "0~100"
+    numeric     female_pct                  "0~100"
+    numeric     age_10s_pct                 "0~100"
+    numeric     age_20s_pct                 "0~100"
+    numeric     age_30s_pct                 "0~100"
+    numeric     age_40s_pct                 "0~100"
+    numeric     age_50s_pct                 "0~100"
+    numeric     age_60p_pct                 "0~100"
+    text        density_lvl                 "면적대비 밀집 단계"
+    jsonb       extras
+  }
+
+  FACT_CITYDATA_COMMERCE {
+    text        poi_code PK, FK
+    timestamptz observed_at PK
+    bigint      total_amount
+    bigint      total_txn
+    text        bucket                      "quiet/normal/busy/peak"
+    jsonb       sectors                     "업종별 금액/건수 {sector:{amount,txn}}"
+    jsonb       extras
+  }
+
+  FACT_CITYDATA_ROAD {
+    text        poi_code PK, FK
+    timestamptz observed_at PK
+    numeric     avg_speed_kmh
+    int         congestion_index
+    int         incidents_cnt
+    jsonb       incidents                    "옵션: 상세 목록"
+    jsonb       extras
+  }
+
+  FACT_CITYDATA_TRANSIT {
+    text        poi_code PK, FK
+    timestamptz observed_at PK
+    int         bus_arrivals_cnt
+    int         subway_arrivals_cnt
+    int         onboard_cnt
+    int         offboard_cnt
+    jsonb       extras
+  }
+
+  FACT_CITYDATA_PARKING {
+    text        poi_code PK, FK
+    timestamptz observed_at PK
+    int         lots_total
+    int         lots_available
+    numeric     utilization_pct
+    jsonb       extras
+  }
+
+  FACT_CITYDATA_EV {
+    text        poi_code PK, FK
+    timestamptz observed_at PK
+    int         chargers_total
+    int         chargers_available
+    jsonb       type_breakdown               "급속/완속 등 구성"
+    jsonb       extras
+  }
+
+  FACT_CITYDATA_BIKE {
+    text        poi_code PK, FK
+    timestamptz observed_at PK
+    int         docks_total
+    int         bikes_available
+    numeric     rack_utilization_pct
+    jsonb       extras
+  }
+
+  FACT_CITYDATA_WEATHER {
+    text        poi_code PK, FK
+    timestamptz observed_at PK
+    numeric     temp_c
+    numeric     humidity_pct
+    numeric     wind_ms
+    numeric     rainfall_mm
+    numeric     pm10
+    numeric     pm25
+    numeric     uv_index
+    text        alert_level
+    jsonb       extras
+  }
+
+  FACT_EVENTS_DAILY {
+    text        poi_code FK
+    text        event_id PK
+    text        title
+    date        start_date
+    date        end_date
+    text        venue
+    text        url
+    text        category
+    timestamptz last_seen_at
+    jsonb       extras
+  }
+
+  %% ============================================================
+  %% MART (서빙/머티리얼라이즈드 뷰)
+  %% ============================================================
+  MART_MV_POP_LATEST {
+    text        poi_code PK                 "poi당 최신 1행 보장"
+    timestamptz observed_at
+    int         population_cnt
+    text        congestion
+    jsonb       extras
+  }
+
+  MART_MV_COMM_LATEST {
+    text        poi_code PK
+    timestamptz observed_at
+    bigint      total_amount
+    bigint      total_txn
+    text        bucket
+    jsonb       sectors
+  }
+
+  MART_MV_ROAD_LATEST {
+    text        poi_code PK
+    timestamptz observed_at
+    numeric     avg_speed_kmh
+    int         congestion_index
+    int         incidents_cnt
+  }
+
+  MART_MV_TREND_12H_POP {
+    text        poi_code PK
+    timestamptz from_ts PK
+    timestamptz to_ts
+    int         samples
+    numeric     avg_population
+    numeric     max_population
+    numeric     min_population
+  }
+
+  %% ============================================================
+  %% ML (예측 결과)
+  %% ============================================================
+  ML_POPULATION_FORECAST_5M {
+    text        poi_code PK, FK
+    timestamptz target_ts  PK
+    text        model_ver  PK
+    bigint      pred_total
+    numeric     mae
+    timestamptz created_at
+  }
+
+  %% ============================================================
+  %% RELATIONSHIPS
+  %% ============================================================
+  CORE_POI ||--o{ RAW_CITYDATA_INGEST        : "has raw"
+  DIM_CATEGORY ||--o{ RAW_CITYDATA_INGEST    : "classifies"
+
+  CORE_POI ||--o{ FACT_CITYDATA_POP          : "has"
+  CORE_POI ||--o{ FACT_CITYDATA_COMMERCE     : "has"
+  CORE_POI ||--o{ FACT_CITYDATA_ROAD         : "has"
+  CORE_POI ||--o{ FACT_CITYDATA_TRANSIT      : "has"
+  CORE_POI ||--o{ FACT_CITYDATA_PARKING      : "has"
+  CORE_POI ||--o{ FACT_CITYDATA_EV           : "has"
+  CORE_POI ||--o{ FACT_CITYDATA_BIKE         : "has"
+  CORE_POI ||--o{ FACT_CITYDATA_WEATHER      : "has"
+  CORE_POI ||--o{ FACT_EVENTS_DAILY          : "hosts"
+
+  DIM_TIME_5M ||--o{ FACT_CITYDATA_POP       : "time-bucket (옵션)"
+  DIM_TIME_5M ||--o{ FACT_CITYDATA_COMMERCE  : "time-bucket (옵션)"
+  DIM_TIME_5M ||--o{ FACT_CITYDATA_ROAD      : "time-bucket (옵션)"
+  DIM_TIME_5M ||--o{ FACT_CITYDATA_TRANSIT   : "time-bucket (옵션)"
+  DIM_TIME_5M ||--o{ FACT_CITYDATA_WEATHER   : "time-bucket (옵션)"
+
+  FACT_CITYDATA_POP     ||..|| MART_MV_POP_LATEST    : "latest per poi"
+  FACT_CITYDATA_COMMERCE||..|| MART_MV_COMM_LATEST   : "latest per poi"
+  FACT_CITYDATA_ROAD    ||..|| MART_MV_ROAD_LATEST   : "latest per poi"
+
+  CORE_POI ||--o{ ML_POPULATION_FORECAST_5M  : "predicts-for"
+
+```
+
 
 
 
