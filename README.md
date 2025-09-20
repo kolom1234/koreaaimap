@@ -18,6 +18,10 @@
 ## 0) 핵심 사양(요약)
 
 * **런타임/포트**: FastAPI + Gunicorn(UvicornWorker), **:9000**
+* **엔드포인트(핵심)**:
+`GET /reco/health` — 헬스
+`GET /reco/v1/citydata?code=POIxxx | place=장소명` — 표준화 citydata (내부 게이트웨이 우선, 실패 시 외부 폴백)
+`POST /reco/v1/recommend` — 추천 점수(거리/혼잡도 등)
 * **헬스체크**: `GET /reco/health` → **200 OK**
   (ECS 컨테이너 헬스 커맨드: `curl -f http://localhost:9000/reco/health || exit 1`)
 * **ALB 규칙**: HTTPS(443) 우선순위 상위에 **`/reco/* → tg-reco(9000)`** + 정확일치 `/reco`도 규칙 추가 권장
@@ -34,20 +38,25 @@ reco/
   app/
     __init__.py
     main.py
-    api/__init__.py
-    api/routes.py
-    core/__init__.py
-    core/config.py
-    models/__init__.py
-    models/schemas.py
-    services/__init__.py
-    services/seoul_client.py
-    services/recommend.py
-    services/cache.py
+    api/
+      __init__.py
+      routes.py               # /reco/* 라우팅
+    core/
+      __init__.py
+      config.py               # ENV 로드·설정
+    models/
+      __init__.py
+      schemas.py              # Pydantic 스키마
+    services/
+      __init__.py
+      cache.py                # Redis/인메모리 캐시
+      seoul_client.py         # 내부 API/외부 OpenAPI 클라이언트
+      recommend.py            # 추천 스코어링(거리/혼잡도 등)
   requirements.txt
   gunicorn_conf.py
   Dockerfile
-  README.md
+  README.md (본 문서)
+
 ```
 
 ---
@@ -571,7 +580,7 @@ components:
 2. **ECS Task**: 포트 9000, 헬스 커맨드 적용, 로그 그룹 `/ecs/koreaaimap-reco`
 3. **ECS Service**: 프라이빗 2AZ, Public IP Off, `ecs-reco-sg` 인바운드 9000 from `alb-sg`
 4. **ALB**: `tg-reco` 헬스 200, **규칙 `/reco/*` & 정확일치 `/reco`** 적용
-5. **DNS**: (선택) `reco.koreaaimap.com → ALB`, 운영 시 Cloudflare Full(Strict) + `alb-sg`를 CF IP로 축소
+5. **DNS**: `reco.koreaaimap.com → ALB`, 운영 시 Cloudflare Full(Strict) + `alb-sg`를 CF IP로 축소
 6. **Smoke**:
 
    ```bash
