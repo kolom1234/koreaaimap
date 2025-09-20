@@ -1,0 +1,299 @@
+-- =====================================================================
+-- 0) 안전 설정
+-- =====================================================================
+-- 애플리케이션 연결 전용 search_path 최소화 권장
+ALTER ROLE postgres SET search_path = public;
+
+-- =====================================================================
+-- 1) 롤 & 스키마
+-- =====================================================================
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_rw') THEN
+    CREATE ROLE app_rw LOGIN PASSWORD '***change_me***';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ro') THEN
+    CREATE ROLE app_ro LOGIN PASSWORD '***change_me***';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'etl') THEN
+    CREATE ROLE etl LOGIN PASSWORD '***change_me***';
+  END IF;
+END$$;
+
+CREATE SCHEMA IF NOT EXISTS core AUTHORIZATION postgres;   -- 기준정보/마스터
+CREATE SCHEMA IF NOT EXISTS raw  AUTHORIZATION etl;        -- 원천 JSON 수집
+CREATE SCHEMA IF NOT EXISTS fact AUTHORIZATION etl;        -- 정규화 사실(파티션)
+CREATE SCHEMA IF NOT EXISTS mart AUTHORIZATION postgres;   -- 조회/MV
+CREATE SCHEMA IF NOT EXISTS util AUTHORIZATION postgres;   -- 관리 함수/잡
+
+GRANT USAGE ON SCHEMA core, raw, fact, mart TO app_ro, app_rw, etl;
+GRANT SELECT ON ALL TABLES IN SCHEMA core, mart TO app_ro, app_rw;
+GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA raw, fact TO etl, app_rw;
+
+-- =====================================================================
+-- 2) 확장
+-- =====================================================================
+-- PostGIS: 공간 타입/함수/인덱스 (RDS에서도 지원)
+CREATE EXTENSION IF NOT EXISTS postgis;
+-- pgcrypto: 해시/암호화(원본 중복 검출 등)
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- (옵션) pg_cron: RDS 12.5+ 지원. 파티션/MV 유지보수 스케줄링
+-- CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+-- =====================================================================
+-- 3) 공통 타입/도메인
+-- =====================================================================
+CREATE TYPE core.congestion_level AS ENUM ('여유','보통','약간 붐빔','붐빔','미상');
+CREATE DOMAIN core.percent_0_100 AS numeric(5,2)
+  CHECK (VALUE >= 0 AND VALUE <= 100);
+
+-- =====================================================================
+-- 4) 기준정보 (POI 마스터)
+--    - 경계는 Geometry(오버레이/시각화), 중심점은 Geography(거리/최근접)
+--    - SRID 4326 (WGS84)
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS core.poi (
+  poi_code     text PRIMARY KEY,
+  name_ko      text NOT NULL,
+  category     text NOT NULL,
+  subcategory  text,
+  boundary     geometry(MultiPolygon, 4326),    -- 지도 폴리곤/경계
+  centroid     geography(Point, 4326),          -- 거리 계산 최적
+  props        jsonb DEFAULT '{}'::jsonb,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now(),
+  CHECK (boundary IS NULL OR ST_IsValid(boundary))
+);
+
+-- 공간 인덱스 (경계/중심점)
+CREATE INDEX IF NOT EXISTS poi_boundary_gist ON core.poi USING GIST (boundary);
+CREATE INDEX IF NOT EXISTS poi_centroid_gist ON core.poi USING GIST (centroid);
+
+-- KNN 최근접 질의는 ORDER BY centroid <-> geography(Point,4326) LIMIT N 형태로 수행
+-- (GiST/Geography KNN 사용)  -- 참고: PostGIS `<->` KNN 정렬 연산자
+-- SELECT poi_code FROM core.poi ORDER BY centroid <-> 'SRID=4326;POINT(127.07 37.55)'::geography LIMIT 5;
+
+-- =====================================================================
+-- 5) RAW 원본 적재 (JSONB)
+--    - 원천 구조 그대로 저장, 추후 정규화 ETL의 소스
+--    - JSONB + GIN 색인으로 키/값 질의 가속
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS raw.citydata_ingest (
+  id            bigserial PRIMARY KEY,
+  src_system    text NOT NULL DEFAULT 'seoul-opendata',   -- 원천 식별자
+  poi_code      text NOT NULL,
+  category      text NOT NULL,                             -- population/commerce/road 등
+  observed_at   timestamptz NOT NULL,                      -- 계측시각(UTC)
+  payload       jsonb NOT NULL,                            -- 원본 전문
+  payload_hash  bytea,                                     -- 중복 검출용(트리거에서 sha256)
+  received_at   timestamptz NOT NULL DEFAULT now()
+);
+
+-- JSONB 색인 (키/값 포함 GIN)
+CREATE INDEX IF NOT EXISTS citydata_ingest_payload_gin ON raw.citydata_ingest USING GIN (payload);
+-- 조회 필드 색인
+CREATE INDEX IF NOT EXISTS citydata_ingest_observed_idx ON raw.citydata_ingest (observed_at DESC);
+CREATE INDEX IF NOT EXISTS citydata_ingest_poi_idx      ON raw.citydata_ingest (poi_code, observed_at DESC);
+
+-- payload 해시 채움 트리거 (pgcrypto.digest, sha256)
+CREATE OR REPLACE FUNCTION raw.fn_fill_payload_hash() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.payload_hash := digest(convert_to(NEW.payload::text, 'UTF8'), 'sha256');
+  RETURN NEW;
+END$$;
+
+DROP TRIGGER IF EXISTS trg_fill_payload_hash ON raw.citydata_ingest;
+CREATE TRIGGER trg_fill_payload_hash
+BEFORE INSERT OR UPDATE OF payload ON raw.citydata_ingest
+FOR EACH ROW EXECUTE FUNCTION raw.fn_fill_payload_hash();
+
+-- (선택) 중복 방지 유니크 제약: 같은 poi_code/category/observed_at/payload_hash 조합 금지
+CREATE UNIQUE INDEX IF NOT EXISTS citydata_ingest_uniq
+  ON raw.citydata_ingest (poi_code, category, observed_at, payload_hash);
+
+-- =====================================================================
+-- 6) FACT (정규화) — 혼잡도/인구 등 핵심 지표 (일 파티셔닝)
+--     파티션 키 포함 복합 PK(설계상 필수: 파티션 테이블의 UNIQUE/PK는
+--     파티션 키 컬럼을 반드시 포함해야 함)
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS fact.citydata_pop (
+  poi_code        text        NOT NULL REFERENCES core.poi(poi_code),
+  observed_at     timestamptz NOT NULL,
+  -- 지표들
+  population_cnt  integer     CHECK (population_cnt >= 0),
+  congestion      core.congestion_level NOT NULL DEFAULT '미상',
+  female_ratio    core.percent_0_100,
+  youth_ratio     core.percent_0_100,
+  seniors_ratio   core.percent_0_100,
+  extras          jsonb       DEFAULT '{}'::jsonb,
+  -- 파티셔닝을 고려한 복합 PK
+  CONSTRAINT citydata_pop_pk PRIMARY KEY (poi_code, observed_at)
+) PARTITION BY RANGE (observed_at);
+
+-- 기본(디폴트) 파티션: 누락 범위 유입 방지
+CREATE TABLE IF NOT EXISTS fact.citydata_pop_default
+  PARTITION OF fact.citydata_pop DEFAULT;
+
+-- 추천/시간 필터 공용 인덱스(부모에 생성 → 자식에 자동 전파)
+CREATE INDEX IF NOT EXISTS citydata_pop_observed_idx ON fact.citydata_pop (observed_at DESC);
+CREATE INDEX IF NOT EXISTS citydata_pop_poi_idx      ON fact.citydata_pop (poi_code, observed_at DESC);
+
+-- =====================================================================
+-- 7) 파티션 관리 유틸 (일 단위 생성/보존기간 정리)
+-- =====================================================================
+CREATE OR REPLACE FUNCTION util.ensure_daily_partition(
+    p_parent regclass,    -- 예: 'fact.citydata_pop'
+    p_date   date         -- 생성 기준일 (하루 범위)
+) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+  parent_schema text;
+  parent_table  text;
+  part_start    timestamptz;
+  part_end      timestamptz;
+  part_name     text;
+  sql           text;
+BEGIN
+  SELECT n.nspname, c.relname
+    INTO parent_schema, parent_table
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE c.oid = p_parent;
+
+  part_start := p_date::timestamptz;
+  part_end   := (p_date + 1)::timestamptz;
+  part_name  := format('%s_%s', parent_table, to_char(p_date, '"p"YYYYMMDD'));
+
+  sql := format($f$
+    CREATE TABLE IF NOT EXISTS %I.%I
+    PARTITION OF %s
+    FOR VALUES FROM (%L) TO (%L);
+  $f$, parent_schema, part_name, p_parent, part_start, part_end);
+
+  EXECUTE sql;
+
+  -- 자식에도 필요한 보조 인덱스 자동 부여가 되지만, 추가 인덱스가 있으면 여기에서 처리 가능
+END$$;
+
+-- 보존기간 경과 파티션 drop
+CREATE OR REPLACE FUNCTION util.drop_partitions_older_than(
+    p_parent regclass,
+    p_keep_days integer
+) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+  r record;
+  cutoff timestamptz := now() - make_interval(days => p_keep_days);
+BEGIN
+  FOR r IN
+    SELECT c.oid, n.nspname, c.relname, pg_get_expr(p.bound::pg_node_tree, p.oid) AS expr
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_partitioned_table pt ON pt.partrelid = p_parent
+      JOIN pg_inherits i ON i.inhparent = p_parent AND i.inhrelid = c.oid
+      JOIN pg_class pc ON pc.oid = i.inhrelid
+      JOIN pg_class pp ON pp.oid = i.inhparent
+      JOIN pg_class p ON p.oid = i.inhrelid
+      LEFT JOIN pg_range r2 ON FALSE  -- placeholder
+     WHERE c.relkind = 'r'
+  LOOP
+    -- 간단화: 이름 규칙 '..._pYYYYMMDD' 기준으로 판단
+    IF r.relname ~ '_p[0-9]{8}$' THEN
+      PERFORM 1;
+      -- 파티션 범위 파싱 대신 이름기준으로 컷오프 이전이면 분리/삭제
+      IF substring(r.relname from '_(p\d{8})$') < to_char((cutoff)::date, '"p"YYYYMMDD') THEN
+        EXECUTE format('ALTER TABLE %s DETACH PARTITION %I.%I', p_parent, r.nspname, r.relname);
+        EXECUTE format('DROP TABLE IF EXISTS %I.%I', r.nspname, r.relname);
+      END IF;
+    END IF;
+  END LOOP;
+END$$;
+
+-- (옵션) pg_cron 스케줄: 매일 자정+1분에 내일자 파티션 생성 / 365일 초과분 정리
+-- SELECT cron.schedule('ensure_tomorrow_partition',
+--   '1 0 * * *',
+--   $$SELECT util.ensure_daily_partition('fact.citydata_pop', (current_date + 1));$$);
+-- SELECT cron.schedule('drop_old_partitions',
+--   '30 0 * * *',
+--   $$SELECT util.drop_partitions_older_than('fact.citydata_pop', 365);$$);
+
+-- =====================================================================
+-- 8) 정규화 채움(ETL) 예시
+-- =====================================================================
+-- 원본(raw) → fact로 upsert (예: population)
+CREATE OR REPLACE FUNCTION util.etl_citydata_pop_from_raw(p_since timestamptz)
+RETURNS bigint LANGUAGE plpgsql AS $$
+DECLARE
+  v_count bigint := 0;
+  r record;
+  d date;
+BEGIN
+  FOR r IN
+    SELECT *
+      FROM raw.citydata_ingest
+     WHERE category = 'population'
+       AND observed_at >= p_since
+     ORDER BY observed_at
+  LOOP
+    d := r.observed_at::date;
+    PERFORM util.ensure_daily_partition('fact.citydata_pop', d);
+
+    INSERT INTO fact.citydata_pop AS t
+      (poi_code, observed_at, population_cnt, congestion, female_ratio, youth_ratio, seniors_ratio, extras)
+    VALUES
+      (
+        r.poi_code,
+        r.observed_at,
+        COALESCE((r.payload->'CITYDATA'->'LIVE_PPLTN_STTS'->>'PPLTN_CNT')::int, (r.payload->>'population')::int),
+        COALESCE((r.payload->'CITYDATA'->'LIVE_PPLTN_STTS'->>'AREA_CONGEST_LVL')::core.congestion_level, '미상'),
+        NULL, NULL, NULL,
+        r.payload
+      )
+    ON CONFLICT (poi_code, observed_at)
+    DO UPDATE SET population_cnt = EXCLUDED.population_cnt,
+                  congestion     = EXCLUDED.congestion,
+                  extras         = EXCLUDED.extras;
+
+    v_count := v_count + 1;
+  END LOOP;
+  RETURN v_count;
+END$$;
+
+-- =====================================================================
+-- 9) 조회 성능용 머티리얼라이즈드 뷰 (최신 스냅샷)
+--    - REFRESH CONCURRENTLY 요건: MV에 UNIQUE 인덱스 필요
+-- =====================================================================
+CREATE MATERIALIZED VIEW IF NOT EXISTS mart.mv_citydata_pop_latest AS
+SELECT DISTINCT ON (poi_code)
+       poi_code,
+       observed_at,
+       population_cnt,
+       congestion,
+       extras
+FROM fact.citydata_pop
+ORDER BY poi_code, observed_at DESC
+WITH NO DATA;
+
+-- CONCURRENTLY 요건 충족을 위한 유니크 인덱스 (poi_code당 1행)
+CREATE UNIQUE INDEX IF NOT EXISTS mv_citydata_pop_latest_uidx
+  ON mart.mv_citydata_pop_latest (poi_code);
+
+-- (옵션) pg_cron으로 1분마다 동시 갱신
+-- SELECT cron.schedule('refresh_mv_pop_latest', '* * * * *',
+--   $$REFRESH MATERIALIZED VIEW CONCURRENTLY mart.mv_citydata_pop_latest;$$);
+
+-- =====================================================================
+-- 10) 권한 정리
+-- =====================================================================
+GRANT SELECT ON mart.mv_citydata_pop_latest TO app_ro, app_rw;
+GRANT SELECT ON core.poi TO app_ro, app_rw;
+GRANT SELECT, INSERT, UPDATE, DELETE ON fact.citydata_pop TO etl, app_rw;
+GRANT SELECT, INSERT ON raw.citydata_ingest TO etl, app_rw;
+
+-- =====================================================================
+-- 11) 운영 점검 쿼리 (참고)
+-- =====================================================================
+-- 최근 5분 스냅샷
+-- SELECT * FROM fact.citydata_pop WHERE observed_at >= now() - interval '5 min' LIMIT 100;
+-- 최근접 5개 POI (사용자 위치 기준)
+-- SELECT poi_code, name_ko FROM core.poi
+-- ORDER BY centroid <-> 'SRID=4326;POINT(127.07 37.55)'::geography
+-- LIMIT 5;
+
