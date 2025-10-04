@@ -4,85 +4,190 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>KoreaAiMap — 서울 도시데이터</title>
+
+  <!-- Tailwind (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Pretendard -->
+  <link rel="stylesheet" as="style" crossorigin
+        href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"/>
+
   <!-- Naver Maps JS (시각화 모듈 포함) -->
   <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId=i0l4aehusw&submodules=visualization"></script>
+
+  <meta name="theme-color" content="#0f172a"/>
   <style>
-    html,body,#map{height:100%;margin:0}
-    #panel{position:absolute;top:12px;left:12px;background:#111a;backdrop-filter:blur(8px);
-           color:#fff;padding:10px 12px;border-radius:12px;font:14px/1.4 system-ui}
-    #panel input{width:130px}
+    :root { --glass: rgba(15,23,42,.6) }
+    html,body,#app,#map { height:100% }
+    body { font-family: Pretendard, ui-sans-serif, system-ui, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", "맑은 고딕", "Malgun Gothic", "Segoe UI", Roboto, sans-serif }
+    .glass { background: var(--glass); backdrop-filter: blur(10px) saturate(140%); }
+    .chip { @apply text-xs px-2 py-1 rounded-full border border-slate-600/50; }
+    .btn  { @apply px-3 py-2 rounded-xl border border-slate-600/50 bg-slate-800/60 hover:bg-slate-700/70 transition; }
+    .field{ @apply px-3 py-2 rounded-lg bg-slate-900/60 border border-slate-700/60 focus:outline-none focus:ring-2 focus:ring-indigo-500; }
+    .badge{ @apply text-[11px] px-2 py-[2px] rounded-md bg-indigo-500/20 text-indigo-200; }
+    .shadow-soft { box-shadow: 0 10px 30px rgba(0,0,0,.35) }
+    .fade-in { animation: fade .35s ease-out both }
+    @keyframes fade { from {opacity:0; transform: translateY(4px)} to {opacity:1; transform:none} }
   </style>
 </head>
-<body>
-  <div id="map"></div>
-  <div id="panel">
-    POI 코드:
-    <input id="code" value="POI104"/>
-    <button id="load">불러오기</button>
-    <span id="updated" style="margin-left:6px;opacity:.8"></span>
-  </div>
+<body class="bg-slate-950 text-slate-200">
+
+  <!-- 헤더 -->
+  <header class="glass border-b border-slate-800/70 sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-rose-500"></div>
+          <div class="leading-tight">
+            <div class="text-sm text-slate-300">Sejong Univ. Capstone</div>
+            <h1 class="text-lg font-semibold">KoreaAiMap <span class="badge">Seoul Citydata</span></h1>
+          </div>
+        </div>
+
+        <!-- 좌표/업데이트 표시 -->
+        <div id="status" class="hidden md:flex items-center gap-3 text-sm">
+          <div class="chip">📍 <span id="placeLabel">-</span></div>
+          <div class="chip">🕒 <span id="updatedLabel">-</span></div>
+          <div class="chip">⏱ <span id="latencyLabel">-</span></div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- 본문 -->
+  <main id="app" class="relative">
+    <!-- 지도 -->
+    <div id="map"></div>
+
+    <!-- 좌측 상단 컨트롤 패널 -->
+    <section class="absolute left-4 top-4 z-30 glass border border-slate-800/60 rounded-2xl p-3 sm:p-4 shadow-soft w-[min(92vw,460px)] fade-in">
+      <div class="flex items-center gap-2 mb-2">
+        <div class="text-xs text-slate-300">도시데이터</div>
+        <div class="chip">/reco/v1/citydata</div>
+      </div>
+
+      <div class="grid grid-cols-12 gap-2">
+        <div class="col-span-6 sm:col-span-5">
+          <label class="block text-xs text-slate-400 mb-1">POI 코드</label>
+          <input id="code" class="field w-full" value="POI104" placeholder="예: POI104"/>
+        </div>
+        <div class="col-span-6 sm:col-span-7">
+          <label class="block text-xs text-slate-400 mb-1">장소(선택)</label>
+          <input id="place" class="field w-full" placeholder="예: 강남역"/>
+        </div>
+        <div class="col-span-12 flex items-center gap-2">
+          <button id="load" class="btn">불러오기</button>
+          <button id="locBtn" class="btn">내 위치로</button>
+          <span class="text-xs text-slate-400">캐시 60초</span>
+        </div>
+      </div>
+
+      <!-- 에러/안내 -->
+      <div id="note" class="mt-3 hidden"></div>
+    </section>
+
+    <!-- 우하단 작은 카드 -->
+    <aside class="absolute right-4 bottom-4 glass border border-slate-800/60 rounded-2xl p-3 shadow-soft text-[13px] leading-5 z-30">
+      <div>🔗 <a class="text-indigo-300 underline" href="https://api.koreaaimap.com/health" target="_blank" rel="noreferrer">API Health</a></div>
+      <div>🌐 CORS: <span class="text-slate-300">www.koreaaimap.com</span></div>
+      <div>🧠 Infer: <span class="text-slate-300">/infer (HMAC via Worker)</span></div>
+    </aside>
+
+    <!-- 로딩 스피너 -->
+    <div id="spinner" class="hidden absolute inset-0 grid place-items-center z-20">
+      <div class="w-12 h-12 border-4 border-slate-700 border-t-indigo-400 rounded-full animate-spin"></div>
+    </div>
+  </main>
 
   <script>
-  // 1) 지도 초기화(서울 시청 근처)
-  const map = new naver.maps.Map('map', {
-    center: new naver.maps.LatLng(37.5665,126.9780),
-    zoom: 13, mapDataControl: true, logoControl: false, scaleControl: false
-  });
+  // --------------------- 유틸 ---------------------
+  const $ = (sel) => document.querySelector(sel);
+  const fmt = (d) => new Date(d).toLocaleString('ko-KR', {hour:'2-digit', minute:'2-digit'});
+  const apiBase = 'https://api.koreaaimap.com';
+  const qp = (obj) => Object.entries(obj).filter(([,v]) => v!=null && v!=='').map(([k,v])=>`${k}=${encodeURIComponent(v)}`).join('&');
 
-  // 2) 히트맵 레이어
-  const heat = new naver.maps.visualization.HeatMap({
-    map, radius: 30, opacity: 0.7, dissipating: true
-  });
+  // 안내/에러 영역
+  function showNote(html, type='info'){
+    const el = $('#note');
+    el.className = type==='error'
+      ? 'mt-3 text-sm text-rose-300 bg-rose-900/30 border border-rose-700/40 rounded-xl p-3'
+      : 'mt-3 text-sm text-emerald-300 bg-emerald-900/20 border border-emerald-700/30 rounded-xl p-3';
+    el.innerHTML = html; el.classList.remove('hidden');
+  }
+  const hideNote = () => $('#note').classList.add('hidden');
+  const setSpin = (on) => $('#spinner').classList[on?'remove':'add']('hidden');
 
-  // 3) Worker 프록시에서 실데이터 받아와서 히트맵 포인트 생성
-  async function loadCity(code){
-    const url = `https://api.koreaaimap.com/reco/v1/citydata?code=${encodeURIComponent(code)}`;
-    const res = await fetch(url, { cache: 'no-store' });
-    const j = await res.json();
-    if(!res.ok) throw new Error(j?.error?.message || 'fetch failed');
+  // --------------------- 지도 초기화 ---------------------
+  let map, heat;
 
-    // 정규 응답(place/updatedAt/categories 구조)로 내려오므로 그대로 사용 가능
-    // 좌표는 우선 '장소 중심점'을 사용하고, 가중치/흩뿌리기(jitter)로 히트맵 표현
-    // (세부 그리드 좌표를 갖추면 이 부분만 교체)
-    const center = guessCenter(j.place.name || j.place.code);
-    if(center){
-      map.setCenter(new naver.maps.LatLng(center[0], center[1]));
-      map.setZoom(15);
+  function ensureVizReady() {
+    if (!window.naver || !naver.maps) throw new Error('Naver Maps not loaded');
+    if (!naver.maps.visualization || !naver.maps.visualization.HeatMap) {
+      throw new Error('Visualization submodule not loaded');
     }
-
-    const pop = pickPopulationScore(j.categories)   // 0~100 추정 혼잡/인구 점수
-    const pts = jitter(center, pop);
-    heat.setData(pts);
-
-    document.getElementById('updated').textContent =
-      new Date(j.updatedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}) + ' 기준';
   }
 
-  // 임시: 코드/이름→중심좌표(필요 시 120개 표로 확장)
-  function guessCenter(nameOrCode){
-    const table = {
-      'POI104':'37.5483,127.0792', '어린이대공원':'37.5483,127.0792',
-      'POI072':'37.5261,126.9315', '여의도':'37.5261,126.9315',
-      'POI014':'37.4981,127.0276', '강남역':'37.4981,127.0276'
-    };
-    const s = table[nameOrCode]; if(!s) return [37.5665,126.9780];
-    const [lat,lng] = s.split(',').map(Number); return [lat,lng];
+  function initMap() {
+    ensureVizReady();
+    map = new naver.maps.Map('map', {
+      center: new naver.maps.LatLng(37.5665, 126.9780), // 서울시청 근처
+      zoom: 13,
+      mapDataControl: true,
+      logoControl: false,
+      scaleControl: false,
+      zoomControl: true,
+      zoomControlOptions: { position: naver.maps.Position.TOP_RIGHT }
+    });
+
+    heat = new naver.maps.visualization.HeatMap({
+      map,
+      radius: 30,
+      opacity: 0.7,
+      dissipating: true
+    });
   }
 
-  // 응답에서 인구/혼잡 관련 점수 대략 추출(스키마는 Worker에서 categories에 원본을 담아줌)
-  function pickPopulationScore(categories){
-    // 실제 필드명은 매뉴얼에 따라 바뀔 수 있음 → 없으면 60 고정 (시연용)
-    // (Worker는 upstream RESULT 체크 후 normalizing해서 내려줌) :contentReference[oaicite:1]{index=1}
-    const c = JSON.stringify(categories).toLowerCase();
+  // 데이터 형태를 LatLng[]로 강제 변환
+  function toLatLngArray(data) {
+    if (Array.isArray(data) && data.length > 0) {
+      if (data[0] instanceof naver.maps.LatLng) return data;
+      if (data[0] && data[0].location instanceof naver.maps.LatLng) {
+        return data.map(d => d.location);
+      }
+    }
+    return [];
+  }
+
+  function setHeatData(points) {
+    const latlngs = toLatLngArray(points);
+    if (!latlngs.length) return;
+    heat.setData(latlngs);
+  }
+
+  // 중심 좌표 추론(샘플, 필요 시 120곳 테이블로 확장)
+  const centerTable = {
+    'POI104':'37.5483,127.0792', '어린이대공원':'37.5483,127.0792',
+    'POI014':'37.4981,127.0276', '강남역':'37.4981,127.0276',
+    'POI072':'37.5261,126.9315', '여의도':'37.5261,126.9315'
+  };
+  function guessCenter(nameOrCode) {
+    const s = centerTable[nameOrCode];
+    if (!s) return [37.5665,126.9780];
+    const [lat,lng] = s.split(',').map(Number);
+    return [lat,lng];
+  }
+
+  // 임시 가중치 추출(실제 스키마로 교체하세요)
+  function pickPopulationScore(categories) {
+    const c = JSON.stringify(categories ?? {}).toLowerCase();
     const m = c.match(/(congestion|ppltn|population).{0,20}?(\d{1,3})/);
     return Math.max(20, Math.min(100, m ? Number(m[2]) : 60));
   }
 
-  // 중심 주위에 점수를 가중치로 흩뿌려 HeatMap 입력 생성
+  // 중심 주변으로 점을 흩뿌려 LatLng[]
   function jitter(center, score){
     const [lat,lng] = center || [37.5665,126.9780];
     const n = Math.round(30 + score * 0.7);
-    const r = 0.004 + score*0.00002; // 반경
+    const r = 0.004 + score*0.00002;
     const pts = [];
     for(let i=0;i<n;i++){
       const a = Math.random()*Math.PI*2, d = Math.random()*r;
@@ -92,8 +197,72 @@
     return pts;
   }
 
-  document.getElementById('load').onclick = () => loadCity(document.getElementById('code').value);
-  loadCity('POI104'); // 최초 로드
+  // --------------------- API ---------------------
+  async function fetchCityData({code, place}) {
+    const url = `${apiBase}/reco/v1/citydata?${qp({code, place})}`;
+    const t0 = performance.now();
+    const res = await fetch(url, { cache: 'no-store' });
+    const elapsed = Math.round(performance.now() - t0);
+    $('#latencyLabel').textContent = `${elapsed} ms`;
+    let json;
+    try { json = await res.json(); } catch { throw new Error('Invalid JSON from API'); }
+    if (!res.ok) {
+      const msg = json?.error?.message || `HTTP ${res.status}`;
+      throw new Error(msg);
+    }
+    return json;
+  }
+
+  async function loadCity() {
+    hideNote(); setSpin(true);
+    try {
+      const code = $('#code').value.trim();
+      const place = $('#place').value.trim();
+      if (!code && !place) throw new Error('POI 코드 또는 장소를 입력하세요.');
+
+      const data = await fetchCityData({code, place});
+      // place/updatedAt/categories 표준 응답을 사용
+      const label = data?.place?.name || data?.place?.code || (code || place);
+      $('#placeLabel').textContent = label ?? '-';
+      $('#updatedLabel').textContent = data?.updatedAt ? fmt(data.updatedAt) : '-';
+
+      const center = guessCenter(label);
+      if (center) {
+        map.setCenter(new naver.maps.LatLng(center[0], center[1]));
+        map.setZoom(15);
+      }
+
+      const pop = pickPopulationScore(data?.categories);
+      const pts = jitter(center, pop);
+      setHeatData(pts);
+
+      showNote(`✅ <b>${label}</b> 데이터 갱신 완료 (score≈${pop})`, 'info');
+    } catch (err) {
+      console.error(err);
+      showNote(`❌ ${err.message}`, 'error');
+    } finally {
+      setSpin(false);
+    }
+  }
+
+  function toMyLocation(){
+    if (!navigator.geolocation) return showNote('이 브라우저는 위치 기능을 지원하지 않습니다.', 'error');
+    navigator.geolocation.getCurrentPosition(pos => {
+      const {latitude, longitude} = pos.coords;
+      map.setCenter(new naver.maps.LatLng(latitude, longitude));
+      map.setZoom(15);
+    }, _ => showNote('현재 위치를 가져올 수 없습니다.', 'error'));
+  }
+
+  // --------------------- 부트스트랩 ---------------------
+  window.addEventListener('DOMContentLoaded', () => {
+    try { initMap(); } catch(e) { showNote('네이버 지도 스크립트를 불러오지 못했습니다.', 'error'); console.error(e); return; }
+    $('#load').addEventListener('click', loadCity);
+    $('#locBtn').addEventListener('click', toMyLocation);
+    $('#code').addEventListener('keydown', e => e.key==='Enter' && loadCity());
+    $('#place').addEventListener('keydown', e => e.key==='Enter' && loadCity());
+    loadCity(); // 최초 로드(기본값: POI104)
+  });
   </script>
 </body>
 </html>
