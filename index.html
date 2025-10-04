@@ -1,621 +1,99 @@
 <!doctype html>
 <html lang="ko">
 <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>세종대학교 실시간 도시데이터 프로젝트</title>
-    <!-- Tailwind (CDN) -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Pretendard Font -->
-    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
-    <style>
-        :root {
-            --brand-gradient: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #c026d3 100%);
-        }
-        html, body {
-            height: 100%;
-            background-color: #020617; /* bg-slate-950 */
-            color: #f8fafc; /* text-slate-50 */
-            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
-        }
-        .glass {
-            backdrop-filter: saturate(150%) blur(12px);
-            background: rgba(30, 41, 59, 0.75); /* bg-slate-800/75 */
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        .chip {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.4rem 0.9rem;
-            border-radius: 999px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            background: rgba(255, 255, 255, 0.05);
-            font-size: 0.875rem;
-            font-weight: 500;
-            transition: all 0.2s ease-in-out;
-            cursor: pointer;
-        }
-        .chip:hover {
-            background: rgba(255, 255, 255, 0.1);
-            border-color: rgba(255, 255, 255, 0.2);
-        }
-        .chip.active {
-            background-color: #4f46e5; /* bg-indigo-600 */
-            border-color: transparent;
-            color: white;
-            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
-        }
-        .legend-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; margin-right: 6px; }
-        .shadow-soft { box-shadow: 0 20px 40px rgba(0,0,0,.3); }
-
-        /* map */
-        #map { height: 65vh; border-radius: 18px; overflow: hidden; }
-        .leaflet-control-container .leaflet-top.leaflet-left { margin-top: 80px; }
-        .leaflet-control-zoom { border: 1px solid rgba(255,255,255,0.1) !important; background: rgba(30, 41, 59, 0.6) !important; backdrop-filter: blur(10px); }
-        .leaflet-control-zoom-in, .leaflet-control-zoom-out { color: white !important; background: transparent !important; }
-        .leaflet-control-zoom-in:hover, .leaflet-control-zoom-out:hover { background-color: rgba(255,255,255,0.1) !important; }
-        .custom-tooltip { background-color: #1e293b; color: white; border: 1px solid #334155; }
-
-        /* chart */
-        .chart-container { position: relative; height: 220px; width: 100%; }
-
-        /* scroll */
-        * { scroll-behavior: smooth; }
-    </style>
-    <!-- Leaflet & Heatmap Plugin -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>KoreaAiMap — 서울 도시데이터</title>
+  <!-- Naver Maps JS (시각화 모듈 포함) -->
+  <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId=i0l4aehusw&submodules=visualization"></script>
+  <style>
+    html,body,#map{height:100%;margin:0}
+    #panel{position:absolute;top:12px;left:12px;background:#111a;backdrop-filter:blur(8px);
+           color:#fff;padding:10px 12px;border-radius:12px;font:14px/1.4 system-ui}
+    #panel input{width:130px}
+  </style>
 </head>
-<body class="text-slate-200">
-    <!-- Header -->
-    <header class="sticky top-0 z-[1000] glass border-b border-slate-700/50">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div class="grid grid-cols-12 items-center gap-4">
-                <!-- Logo -->
-                <div class="col-span-12 lg:col-span-3 flex items-center gap-3">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 2L3 7V17L12 22L21 17V7L12 2Z" fill="url(#brand-gradient-header)" />
-                        <defs><linearGradient id="brand-gradient-header" x1="3" y1="2" x2="21" y2="22" gradientUnits="userSpaceOnUse"><stop stop-color="#4f46e5"/><stop offset="1" stop-color="#c026d3"/></linearGradient></defs>
-                    </svg>
-                    <div>
-                        <h1 class="text-xl font-extrabold text-white tracking-tight">KoreaAiMap</h1>
-                        <p class="text-xs text-slate-400">서울 실시간 도시데이터 데모</p>
-                    </div>
-                </div>
-                
-                <!-- Search -->
-                <div class="col-span-12 lg:col-span-6">
-                    <div class="relative w-full" id="search-container">
-                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <svg class="h-5 w-5 text-slate-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path></svg>
-                        </div>
-                        <input type="text" id="search-input" placeholder="장소 또는 키워드 검색 (예: 어린이대공원, 여의도한강공원, 서울숲, 강남)" class="block w-full bg-slate-900/70 border border-slate-700 rounded-lg py-2.5 pl-10 pr-3 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition">
-                        <div id="hotspot-dropdown" class="absolute mt-2 w-full glass rounded-xl py-1 shadow-lg z-[1001] hidden">
-                           <!-- Search results will be populated here -->
-                        </div>
-                    </div>
-                </div>
+<body>
+  <div id="map"></div>
+  <div id="panel">
+    POI 코드:
+    <input id="code" value="POI104"/>
+    <button id="load">불러오기</button>
+    <span id="updated" style="margin-left:6px;opacity:.8"></span>
+  </div>
 
-                <!-- Update Info -->
-                 <div class="col-span-12 lg:col-span-3 flex items-center justify-end gap-2 sm:gap-3">
-                    <div id="weatherChip" class="chip">☀️ --.-°C</div>
-                    <div id="updatedAtChip" class="chip hidden sm:flex">--:-- 기준</div>
-                </div>
-            </div>
-             <!-- Category Chips -->
-            <div class="mt-4 flex gap-2 flex-wrap">
-                <button data-layer="population" class="chip active">👥 인구</button>
-                <button data-layer="congestion" class="chip active">🌡️ 혼잡도</button>
-                <button data-layer="parking" class="chip">🅿️ 주차</button>
-                <button data-layer="cctv" class="chip">📹 CCTV</button>
-                <button data-layer="bike" class="chip">🚲 따릉이</button>
-                <button data-layer="subway" class="chip">🚇 지하철</button>
-            </div>
-        </div>
-    </header>
+  <script>
+  // 1) 지도 초기화(서울 시청 근처)
+  const map = new naver.maps.Map('map', {
+    center: new naver.maps.LatLng(37.5665,126.9780),
+    zoom: 13, mapDataControl: true, logoControl: false, scaleControl: false
+  });
 
-    <!-- Main Content (same as before) -->
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-24">
-         <!-- Route Planner -->
-        <section class="glass rounded-xl p-4 mb-6 flex flex-col sm:flex-row gap-2 items-center">
-            <select id="routeStart" class="w-full sm:flex-1 bg-slate-900/70 border border-slate-700 rounded-lg px-3 py-2 text-white">
-                <option value="">출발지 선택</option>
-            </select>
-            <span class="hidden sm:block text-slate-400">--></span>
-            <select id="routeEnd" class="w-full sm:flex-1 bg-slate-900/70 border border-slate-700 rounded-lg px-3 py-2 text-white">
-                <option value="">도착지 선택</option>
-            </select>
-            <button id="routeBtn" class="chip w-full sm:w-auto">경로 보기</button>
-        </section>
-        
-        <!-- Map + Side Tools -->
-        <section class="relative">
-            <div id="map" class="shadow-soft"></div>
-            <!-- Map style switch -->
-            <div class="absolute top-4 right-4 z-[401] glass rounded-xl p-1.5 flex flex-col gap-1.5">
-                <button class="chip !px-3 !py-1.5 active" data-style="dark">야간</button>
-                <button class="chip !px-3 !py-1.5" data-style="gray">흑백</button>
-                <button class="chip !px-3 !py-1.5" data-style="auto">일반</button>
-            </div>
-            <!-- Legend -->
-            <div id="legend" class="absolute bottom-4 left-4 z-[401] glass rounded-xl p-3 text-sm">
-                <div class="mb-2 font-semibold text-white">혼잡도</div>
-                <div class="flex items-center"><span class="legend-dot" style="background:#22c55e"></span>여유</div>
-                <div class="flex items-center mt-1"><span class="legend-dot" style="background:#f59e0b"></span>보통</div>
-                <div class="flex items-center mt-1"><span class="legend-dot" style="background:#ef4444"></span>붐빔</div>
-            </div>
-        </section>
+  // 2) 히트맵 레이어
+  const heat = new naver.maps.visualization.HeatMap({
+    map, radius: 30, opacity: 0.7, dissipating: true
+  });
 
-        <!-- Info Panel -->
-        <section class="mt-6 grid lg:grid-cols-3 gap-6">
-            <!-- Big Card -->
-            <article class="lg:col-span-2 glass rounded-2xl p-6">
-                <div class="flex flex-wrap items-baseline gap-x-4 gap-y-2">
-                    <h2 id="titleNow" class="text-2xl font-bold text-white"></h2>
-                    <span id="statusBadge" class="chip text-base"></span>
-                    <span id="updatedAt" class="text-slate-400 text-sm ml-auto"></span>
-                </div>
-                <div class="grid sm:grid-cols-3 gap-4 mt-5">
-                    <div class="glass rounded-xl p-4 flex flex-col">
-                        <div class="text-sm text-slate-400 flex items-center gap-2">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
-                            실시간 인구(추정)
-                        </div>
-                        <div id="peopleNow" class="text-3xl font-bold mt-2 text-white">—</div>
-                        <div id="stayTime" class="text-slate-400 text-sm mt-auto pt-1"></div>
-                    </div>
-                    <div class="glass rounded-xl p-4 flex flex-col">
-                        <div class="text-sm text-slate-400 flex items-center gap-2">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 11l3-3m0 0l3 3m-3-3v8m0-13a9 9 0 110 18 9 9 0 010-18z"></path></svg>
-                             혼잡도
-                        </div>
-                        <div id="congestionScore" class="text-3xl font-bold mt-2 text-white">—</div>
-                        <div id="changeRate" class="text-sm mt-auto pt-1"></div>
-                    </div>
-                    <div class="glass rounded-xl p-4 flex flex-col">
-                        <div class="text-sm text-slate-400 flex items-center gap-2">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                            주변 교통 속도
-                        </div>
-                        <div id="trafficSpeed" class="text-3xl font-bold mt-2 text-white">—</div>
-                        <div class="text-slate-400 text-sm mt-auto pt-1">차량 평균 속도</div>
-                    </div>
-                </div>
-                <div class="mt-6">
-                    <h3 class="font-semibold text-slate-300 mb-2">시간대별 혼잡도 예측</h3>
-                    <div class="chart-container">
-                        <canvas id="chart"></canvas>
-                    </div>
-                </div>
-            </article>
-            <!-- Details -->
-            <aside class="glass rounded-2xl p-6">
-                <h3 class="font-semibold text-xl text-white mb-4">주요 지점 정보</h3>
-                <ul id="poiList" class="space-y-3 text-sm max-h-[300px] overflow-y-auto pr-2"></ul>
-                <hr class="border-white/10 my-5">
-                <h3 class="font-semibold text-xl text-white mb-4">장소 특징</h3>
-                <div id="placeTags" class="flex flex-wrap gap-2"></div>
-            </aside>
-        </section>
+  // 3) Worker 프록시에서 실데이터 받아와서 히트맵 포인트 생성
+  async function loadCity(code){
+    const url = `https://api.koreaaimap.com/reco/v1/citydata?code=${encodeURIComponent(code)}`;
+    const res = await fetch(url, { cache: 'no-store' });
+    const j = await res.json();
+    if(!res.ok) throw new Error(j?.error?.message || 'fetch failed');
 
-        <!-- About -->
-        <section id="about" class="mt-10 glass rounded-2xl p-6">
-            <h3 class="font-semibold text-lg mb-2 text-white">ℹ️ 서비스 안내</h3>
-            <p class="text-slate-300 text-sm leading-6">
-                본 페이지는 <b>서울시 실시간 도시데이터</b> 프로젝트의 데모 페이지입니다. 지도 및 차트 시각화에는 Leaflet.js, Chart.js 등 오픈소스 라이브러리를 사용하였으며, 표시되는 모든 데이터는 실제가 아닌 모의 데이터입니다. 올해 말에 배포될 실제 프로젝트에서서는 실시간 정보와 AI 경로 추천 기능을 제공할 예정입니다.
-            </p>
-        </section>
-    </main>
+    // 정규 응답(place/updatedAt/categories 구조)로 내려오므로 그대로 사용 가능
+    // 좌표는 우선 '장소 중심점'을 사용하고, 가중치/흩뿌리기(jitter)로 히트맵 표현
+    // (세부 그리드 좌표를 갖추면 이 부분만 교체)
+    const center = guessCenter(j.place.name || j.place.code);
+    if(center){
+      map.setCenter(new naver.maps.LatLng(center[0], center[1]));
+      map.setZoom(15);
+    }
 
-    <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        // -------- Mock data (핫스팟 정의) ----------
-        const hotspots = {
-            "어린이대공원": {
-                center: [37.5483, 127.0792], zoom: 15, circleRadius: 450, persons: 5200, stayHours: 2, congestion: 68, changeRate: +16.1, traffic: 18, weather: "☀️ 28.6°C",
-                tags: ["가족나들이", "동물원", "놀이공원", "산책"],
-                poi: [
-                    { name: "정문", coord: [37.5489,127.0826], type: "gate" }, { name: "7호선 어린이대공원역", coord: [37.5481,127.0742], type: "subway" },
-                    { name: "정문 주차장", coord: [37.5472,127.0749], type: "parking" }, { name: "따릉이 대여소", coord: [37.5477,127.0799], type: "bike" }
-                ],
-                heat: [[37.5489,127.0820,0.8],[37.5468,127.0785,0.6],[37.5502,127.0782,0.5],[37.5475,127.0810,0.7],[37.5482,127.0790,0.9]],
-                hourly: [35,42,40,38,45,52,60,70,72,68,65,61,58,56,60,64,70,74,78,80,76,69,58,44]
-            },
-            "여의도한강공원": {
-                center: [37.5261,126.9315], zoom: 15, circleRadius: 650, persons: 7800, stayHours: 3, congestion: 82, changeRate: +8.3, traffic: 22, weather: "🌤 27.1°C",
-                tags: ["피크닉", "자전거", "야경", "데이트"],
-                poi: [
-                    { name: "5호선 여의나루역", coord: [37.5271,126.9328], type: "subway" }, { name: "제3주차장", coord: [37.5278,126.9347], type: "parking" },
-                    { name: "따릉이(여의나루역 1번출구)", coord: [37.5257,126.9336], type: "bike" }, { name: "이랜드크루즈 선착장", coord: [37.5244, 126.9324], type:"gate"}
-                ],
-                heat: [[37.5266,126.9342,0.8],[37.5238,126.9305,0.6],[37.5271,126.9289,0.5],[37.5262,126.9331,0.9],[37.5251,126.9318,0.7]],
-                hourly: [22,20,18,17,19,24,33,45,58,70,78,82,80,76,74,72,68,66,70,75,71,60,42,28]
-            },
-            "서울숲": {
-                center: [37.5446, 127.0378], zoom: 15, circleRadius: 520, persons: 4100, stayHours: 2.5, congestion: 55, changeRate: -3.2, traffic: 17, weather: "⛅️ 26.9°C",
-                tags: ["공원", "자연", "산책", "피크닉"],
-                poi: [
-                    { name: "수인분당선 서울숲역", coord: [37.5442,127.0447], type: "subway" }, { name: "서울숲 주차장", coord: [37.5439,127.0356], type: "parking" },
-                    { name: "따릉이(서울숲역 4번출구)", coord: [37.5437,127.0387], type: "bike" }
-                ],
-                heat: [[37.5455,127.0386,0.7],[37.5448,127.0399,0.65],[37.5432,127.0366,0.55],[37.5449,127.0372,0.8],[37.5462,127.0378,0.5]],
-                hourly: [15,13,12,12,15,22,31,42,50,55,57,59,60,58,56,54,53,51,50,52,55,48,35,20]
-            },
-            "강남역": {
-                center: [37.4981, 127.0276], zoom: 16, circleRadius: 400, persons: 12500, stayHours: 1.5, congestion: 95, changeRate: +25.5, traffic: 12, weather: "☀️ 29.1°C",
-                tags: ["쇼핑", "맛집", "약속장소", "유동인구"],
-                poi: [
-                    { name: "2호선 강남역", coord: [37.4979,127.0276], type: "subway" }, { name: "강남역 11번 출구", coord: [37.4989, 127.0280], type: "gate"},
-                    { name: "따릉이(강남역 2번출구)", coord: [37.4970, 127.0285], type: "bike" }
-                ],
-                heat: [[37.4989,127.0280,0.9],[37.4970,127.0265,0.7],[37.4985,127.0290,0.6]],
-                hourly: [40,35,38,45,55,68,75,82,88,92,95,93,90,85,88,90,94,98,100,96,85,70,60,50]
-            },
-            "명동": {
-                center: [37.5619, 126.9856], zoom: 16, circleRadius: 450, persons: 9800, stayHours: 2, congestion: 88, changeRate: -5.1, traffic: 15, weather: "☀️ 28.8°C",
-                tags: ["관광", "쇼핑", "길거리음식", "외국인"],
-                poi: [
-                    { name: "4호선 명동역", coord: [37.5609, 126.9864], type: "subway" }, { name: "2호선 을지로입구역", coord: [37.5661, 126.9824], type: "subway"},
-                    { name: "명동예술극장", coord: [37.5627, 126.9855], type: "gate" }, { name: "따릉이(명동역 3번출구)", coord: [37.5613, 126.9857], type: "bike" }
-                ],
-                heat: [[37.5625,126.9850,0.95],[37.5633,126.9838,0.7],[37.5610,126.9870,0.6]],
-                hourly: [30,28,32,40,55,68,78,85,88,90,87,85,83,86,89,92,90,85,80,72,60,50,40,35]
-            },
-            "광화문광장": {
-                center: [37.5721, 126.9765], zoom: 16, circleRadius: 350, persons: 6100, stayHours: 1.5, congestion: 72, changeRate: +12.0, traffic: 20, weather: "🌤 27.5°C",
-                tags: ["역사", "광장", "산책", "도심"],
-                poi: [
-                    { name: "5호선 광화문역", coord: [37.5701, 126.9768], type: "subway" }, { name: "세종대왕 동상", coord: [37.5727, 126.9769], type: "gate"},
-                    { name: "이순신장군 동상", coord: [37.5710, 126.9770], type: "gate" }, { name: "따릉이(세종문화회관)", coord: [37.5724, 126.9750], type: "bike" }
-                ],
-                heat: [[37.5727,126.9769,0.8],[37.5710,126.9770,0.9],[37.5740,126.9765,0.6]],
-                hourly: [25,22,25,30,40,50,60,68,72,75,73,70,68,65,68,70,74,78,75,68,55,45,35,30]
-            },
-            "이태원 관광특구": {
-                center: [37.5345, 126.9940], zoom: 16, circleRadius: 380, persons: 7200, stayHours: 3, congestion: 78, changeRate: +5.8, traffic: 16, weather: "🌙 24.5°C",
-                tags: ["야간", "다국적", "맛집", "클럽"],
-                poi: [
-                    { name: "6호선 이태원역", coord: [37.5346, 126.9945], type: "subway" }, { name: "해밀톤호텔", coord: [37.5349, 126.9939], type: "gate"},
-                    { name: "용산구청", coord: [37.5321, 126.9906], type: "parking" }, { name: "따릉이(이태원역 4번출구)", coord: [37.5342, 126.9948], type: "bike" }
-                ],
-                heat: [[37.5348,126.9935,0.9],[37.5352,126.9958,0.7],[37.5339,126.9922,0.6]],
-                hourly: [20,18,17,20,25,35,45,55,62,68,72,75,78,76,74,75,78,82,88,92,90,75,55,35]
-            },
-            "잠실 롯데월드": {
-                center: [37.5110, 127.0982], zoom: 16, circleRadius: 450, persons: 11000, stayHours: 3.5, congestion: 88, changeRate: +14.2, traffic: 24, weather: "☀️ 28.3°C",
-                tags: ["놀이공원", "실내", "가족", "데이트"],
-                poi: [
-                    { name: "2호선 잠실역", coord: [37.5130,127.1000], type: "subway" }, { name: "롯데월드타워", coord: [37.5131,127.1028], type: "gate"},
-                    { name: "주차장", coord: [37.5097,127.0984], type: "parking" }, { name: "따릉이(잠실역 3번출구)", coord: [37.5135,127.1002], type: "bike" }
-                ],
-                heat: [[37.5115,127.0985,0.9],[37.5105,127.0978,0.8],[37.5122,127.0990,0.7],[37.5098,127.0970,0.6],[37.5110,127.1005,0.5]],
-                hourly: [40,35,38,45,55,68,75,82,88,92,95,93,90,85,88,90,94,98,100,96,85,70,60,50]
-            },
-            "홍대입구": {
-                center: [37.5563, 126.9250], zoom: 16, circleRadius: 420, persons: 9500, stayHours: 2.5, congestion: 85, changeRate: +6.4, traffic: 14, weather: "🌙 25.2°C",
-                tags: ["젊음", "클럽", "거리공연", "쇼핑"],
-                poi: [
-                    { name: "2호선 홍대입구역", coord: [37.5570,126.9258], type: "subway" }, { name: "홍대 걷고싶은거리", coord: [37.5567,126.9236], type: "gate"},
-                    { name: "홍대주차장", coord: [37.5560,126.9225], type: "parking" }, { name: "따릉이(홍대입구역 3번출구)", coord: [37.5565,126.9255], type: "bike" }
-                ],
-                heat: [[37.5567,126.9255,0.9],[37.5558,126.9240,0.8],[37.5572,126.9260,0.7],[37.5560,126.9270,0.6],[37.5550,126.9250,0.5]],
-                hourly: [20,18,17,20,25,35,45,55,62,68,72,75,78,76,74,75,78,82,88,92,90,75,55,35]
-            },
-            "북촌 한옥마을": {
-                center: [37.5826, 126.9830], zoom: 16, circleRadius: 360, persons: 4300, stayHours: 2, congestion: 52, changeRate: -2.5, traffic: 13, weather: "⛅️ 26.1°C",
-                tags: ["전통", "한옥", "관광", "산책"],
-                poi: [
-                    { name: "3호선 안국역", coord: [37.5792,126.9860], type: "subway" }, { name: "북촌문화센터", coord: [37.5828,126.9837], type: "gate"},
-                    { name: "북촌 공영주차장", coord: [37.5835,126.9818], type: "parking" }, { name: "따릉이(안국역 2번출구)", coord: [37.5798,126.9870], type: "bike" }
-                ],
-                heat: [[37.5820,126.9835,0.7],[37.5830,126.9840,0.6],[37.5815,126.9825,0.5],[37.5835,126.9830,0.4],[37.5825,126.9815,0.3]],
-                hourly: [15,13,12,12,15,22,31,42,50,55,57,59,60,58,56,54,53,51,50,52,55,48,35,20]
-            },
-            "남산서울타워": {
-                center: [37.5512, 126.9882], zoom: 16, circleRadius: 300, persons: 5400, stayHours: 1.5, congestion: 70, changeRate: +7.5, traffic: 18, weather: "☀️ 27.9°C",
-                tags: ["전망", "관광", "케이블카", "야경"],
-                poi: [
-                    { name: "4호선 명동역", coord: [37.5600,126.9865], type: "subway" }, { name: "남산서울타워", coord: [37.5512,126.9882], type: "gate"},
-                    { name: "남산공원 주차장", coord: [37.5495,126.9888], type: "parking" }, { name: "따릉이(남산케이블카)", coord: [37.5530,126.9874], type: "bike" }
-                ],
-                heat: [[37.5515,126.9885,0.8],[37.5505,126.9875,0.7],[37.5520,126.9890,0.6],[37.5510,126.9870,0.5],[37.5525,126.9880,0.4]],
-                hourly: [25,22,25,30,40,50,60,68,72,75,73,70,68,65,68,70,74,78,75,68,55,45,35,30]
-            },
-            "성수카페거리": {
-                center: [37.5413, 127.0553], zoom: 16, circleRadius: 420, persons: 6800, stayHours: 2, congestion: 73, changeRate: +9.1, traffic: 17, weather: "☁️ 25.8°C",
-                tags: ["카페", "핫플", "산업재생", "맛집"],
-                poi: [
-                    { name: "2호선 성수역", coord: [37.5443,127.0558], type: "subway" }, { name: "성수동 카페거리", coord: [37.5422,127.0541], type: "gate"},
-                    { name: "성수 공영주차장", coord: [37.5405,127.0526], type: "parking" }, { name: "따릉이(성수역 2번출구)", coord: [37.5440,127.0550], type: "bike" }
-                ],
-                heat: [[37.5420,127.0555,0.8],[37.5410,127.0540,0.7],[37.5425,127.0565,0.6],[37.5405,127.0535,0.5],[37.5415,127.0570,0.4]],
-                hourly: [15,13,12,12,15,22,31,42,50,55,57,59,60,58,56,54,53,51,50,52,55,48,35,20]
-            },
-            "동대문디자인플라자": {
-                center: [37.5665, 127.0096], zoom: 16, circleRadius: 430, persons: 8300, stayHours: 2.5, congestion: 80, changeRate: +3.6, traffic: 19, weather: "☀️ 28.0°C",
-                tags: ["전시", "패션", "야경", "관광"],
-                poi: [
-                    { name: "2호선 동대문역사문화공원역", coord: [37.5653,127.0090], type: "subway" }, { name: "동대문디자인플라자", coord: [37.5665,127.0096], type: "gate"},
-                    { name: "DDP 주차장", coord: [37.5672,127.0108], type: "parking" }, { name: "따릉이(DDP앞)", coord: [37.5658,127.0102], type: "bike" }
-                ],
-                heat: [[37.5668,127.0100,0.85],[37.5655,127.0085,0.75],[37.5675,127.0090,0.65],[37.5660,127.0110,0.55],[37.5650,127.0095,0.45]],
-                hourly: [30,28,32,40,55,68,78,85,88,90,87,85,83,86,89,92,90,85,80,72,60,50,40,35]
-            },
-            "반포한강공원": {
-                center: [37.5124, 126.9982], zoom: 15, circleRadius: 620, persons: 6500, stayHours: 3, congestion: 76, changeRate: +5.5, traffic: 21, weather: "🌤 27.3°C",
-                tags: ["야경", "분수", "피크닉", "자전거"],
-                poi: [
-                    { name: "9호선 신반포역", coord: [37.5038,126.9871], type: "subway" }, { name: "달빛무지개분수", coord: [37.5123,126.9960], type: "gate"},
-                    { name: "반포한강공원 주차장", coord: [37.5137,127.0005], type: "parking" }, { name: "따릉이(반포한강공원)", coord: [37.5128,126.9972], type: "bike" }
-                ],
-                heat: [[37.5130,126.9990,0.8],[37.5115,126.9970,0.7],[37.5120,126.9960,0.6],[37.5110,127.0000,0.5],[37.5135,126.9985,0.4]],
-                hourly: [22,20,18,17,19,24,33,45,58,70,78,82,80,76,74,72,68,66,70,75,71,60,42,28]
-            },
-            "코엑스": {
-                center: [37.5125, 127.0587], zoom: 16, circleRadius: 450, persons: 9000, stayHours: 2.5, congestion: 83, changeRate: +11.0, traffic: 20, weather: "☀️ 28.5°C",
-                tags: ["전시", "쇼핑", "컨벤션", "아쿠아리움"],
-                poi: [
-                    { name: "2호선 삼성역", coord: [37.5088,127.0630], type: "subway" }, { name: "코엑스몰", coord: [37.5130,127.0565], type: "gate"},
-                    { name: "코엑스 주차장", coord: [37.5108,127.0592], type: "parking" }, { name: "따릉이(삼성역 5번출구)", coord: [37.5089,127.0620], type: "bike" }
-                ],
-                heat: [[37.5128,127.0590,0.85],[37.5115,127.0580,0.75],[37.5135,127.0600,0.65],[37.5118,127.0570,0.55],[37.5120,127.0610,0.45]],
-                hourly: [40,35,38,45,55,68,75,82,88,92,95,93,90,85,88,90,94,98,100,96,85,70,60,50]
-            },
-            "서울역": {
-                center: [37.5551, 126.9723], zoom: 16, circleRadius: 400, persons: 12000, stayHours: 1, congestion: 92, changeRate: +18.4, traffic: 30, weather: "☀️ 28.2°C",
-                tags: ["교통", "환승", "KTX", "역사"],
-                poi: [
-                    { name: "1호선 서울역", coord: [37.5546,126.9721], type: "subway" }, { name: "서울역사", coord: [37.5551,126.9723], type: "gate"},
-                    { name: "서울역 주차장", coord: [37.5565,126.9710], type: "parking" }, { name: "따릉이(서울역광장)", coord: [37.5559,126.9733], type: "bike" }
-                ],
-                heat: [[37.5560,126.9728,0.9],[37.5545,126.9715,0.8],[37.5555,126.9735,0.7],[37.5535,126.9720,0.6],[37.5550,126.9705,0.5]],
-                hourly: [40,35,38,45,55,68,75,82,88,92,95,93,90,85,88,90,94,98,100,96,85,70,60,50]
-            }
-        };
+    const pop = pickPopulationScore(j.categories)   // 0~100 추정 혼잡/인구 점수
+    const pts = jitter(center, pop);
+    heat.setData(pts);
 
-        // --------- Leaflet map ----------
-        const map = L.map('map', { zoomControl: true, scrollWheelZoom: true });
-        const tilesGray = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 20, attribution: '&copy; OSM & CARTO' });
-        const tilesDark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 20, attribution: '&copy; OSM & CARTO' });
-        const tilesAuto = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' });
-        tilesDark.addTo(map);
+    document.getElementById('updated').textContent =
+      new Date(j.updatedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}) + ' 기준';
+  }
 
-        const layers = {
-            population: L.layerGroup().addTo(map), congestion: L.layerGroup().addTo(map), parking: L.layerGroup(),
-            cctv: L.layerGroup(), bike: L.layerGroup(), subway: L.layerGroup()
-        };
+  // 임시: 코드/이름→중심좌표(필요 시 120개 표로 확장)
+  function guessCenter(nameOrCode){
+    const table = {
+      'POI104':'37.5483,127.0792', '어린이대공원':'37.5483,127.0792',
+      'POI072':'37.5261,126.9315', '여의도':'37.5261,126.9315',
+      'POI014':'37.4981,127.0276', '강남역':'37.4981,127.0276'
+    };
+    const s = table[nameOrCode]; if(!s) return [37.5665,126.9780];
+    const [lat,lng] = s.split(',').map(Number); return [lat,lng];
+  }
 
-        const icons = {
-            parking: L.divIcon({ html: '🅿️', className: 'map-icon', iconSize: [24, 24] }),
-            bike: L.divIcon({ html: '🚲', className: 'map-icon', iconSize: [24, 24] }),
-            cctv: L.divIcon({ html: '📹', className: 'map-icon', iconSize: [24, 24] }),
-            subway: L.divIcon({ html: '🚇', className: 'map-icon', iconSize: [24, 24] }),
-            gate: L.divIcon({ html: '📍', className: 'map-icon', iconSize: [24, 24] })
-        };
-        let heatLayer = null, areaCircle = null, routeLine = null, routeMarkers = [];
-        // --------- Chart ----------
-        const ctx = document.getElementById('chart').getContext('2d');
-        const gradient = ctx.createLinearGradient(0, 0, 0, 200);
-        gradient.addColorStop(0, 'rgba(99, 102, 241, 0.5)');
-        gradient.addColorStop(1, 'rgba(99, 102, 241, 0)');
-        
-        const chart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: [...Array(24).keys()].map(h => `${String(h).padStart(2, '0')}:00`),
-                datasets: [{
-                    label: '시간대별 혼잡도', data: [],
-                    borderColor: 'rgba(99, 102, 241, 1)',
-                    backgroundColor: gradient,
-                    borderWidth: 2.5,
-                    pointBackgroundColor: 'rgba(99, 102, 241, 1)',
-                    pointBorderColor: '#fff',
-                    pointHoverRadius: 6,
-                    pointRadius: 0,
-                    tension: 0.4,
-                    fill: true
-                }]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                scales: {
-                    y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,.1)' }, ticks: { color: 'rgba(255,255,255,.8)' } },
-                    x: { grid: { display: false }, ticks: { color: 'rgba(255,255,255,.7)', maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } }
-                },
-                plugins: {
-                    legend: { display: false },
-                    tooltip: { mode: 'index', intersect: false, backgroundColor: 'rgba(15, 23, 42, 0.8)', titleFont: {weight: 'bold'}, bodySpacing: 5, padding: 10, cornerRadius: 8 }
-                }
-            }
-        });
+  // 응답에서 인구/혼잡 관련 점수 대략 추출(스키마는 Worker에서 categories에 원본을 담아줌)
+  function pickPopulationScore(categories){
+    // 실제 필드명은 매뉴얼에 따라 바뀔 수 있음 → 없으면 60 고정 (시연용)
+    // (Worker는 upstream RESULT 체크 후 normalizing해서 내려줌) :contentReference[oaicite:1]{index=1}
+    const c = JSON.stringify(categories).toLowerCase();
+    const m = c.match(/(congestion|ppltn|population).{0,20}?(\d{1,3})/);
+    return Math.max(20, Math.min(100, m ? Number(m[2]) : 60));
+  }
 
-        // --------- UI control ----------
-        const $ = (sel) => document.querySelector(sel);
-        const $$ = (sel) => document.querySelectorAll(sel);
-        const fmt = (n) => n.toLocaleString('ko-KR');
+  // 중심 주위에 점수를 가중치로 흩뿌려 HeatMap 입력 생성
+  function jitter(center, score){
+    const [lat,lng] = center || [37.5665,126.9780];
+    const n = Math.round(30 + score * 0.7);
+    const r = 0.004 + score*0.00002; // 반경
+    const pts = [];
+    for(let i=0;i<n;i++){
+      const a = Math.random()*Math.PI*2, d = Math.random()*r;
+      const p = new naver.maps.LatLng(lat + Math.cos(a)*d, lng + Math.sin(a)*d);
+      pts.push({ location: p, weight: 1 + score/25 });
+    }
+    return pts;
+  }
 
-        function statusFrom(score) {
-            if (score >= 80) return { label: '붐빔', color: '#ef4444' };
-            if (score >= 60) return { label: '약간 붐빔', color: '#f59e0b' };
-            return { label: '여유', color: '#22c55e' };
-        }
-
-        function renderHotspot(name) {
-            const h = hotspots[name];
-            if (!h) return;
-
-            // Update UI with selected hotspot data
-            $('#search-input').value = name;
-            $('#weatherChip').textContent = h.weather;
-            $('#titleNow').textContent = `지금 ${name}은`;
-            
-            map.setView(h.center, h.zoom);
-            
-            Object.values(layers).forEach(g => g.clearLayers());
-            if (heatLayer) map.removeLayer(heatLayer);
-            if (areaCircle) map.removeLayer(areaCircle);
-            
-            areaCircle = L.circle(h.center, { radius: h.circleRadius, color: '#a78bfa', weight: 2, fill: true, fillOpacity: .08 }).addTo(layers.population);
-            heatLayer = L.heatLayer(h.heat, { radius: 45, blur: 30, maxZoom: 17, gradient: { 0.2: '#22c55e', 0.5: '#f59e0b', 0.8: '#ef4444' } }).addTo(layers.congestion);
-            $$('button[data-layer]').forEach(btn => updateLayerVisibility(btn)); // Update layer visibility based on toggles
-            
-            h.poi.forEach(p => {
-                L.marker(p.coord, { icon: icons[p.type] || icons.gate })
-                    .addTo(layers[p.type] || layers.population)
-                    .bindTooltip(p.name, { direction: 'top', offset: [0, -10], className: 'custom-tooltip' });
-            });
-            
-            $('#poiList').innerHTML = h.poi.map(p => `
-                <li class="glass rounded-lg px-4 py-3 flex justify-between items-center hover:bg-slate-700/50 transition-colors">
-                    <span class="font-medium text-slate-200">${p.name}</span>
-                    <span class="text-xl">${iconEmoji(p.type)}</span>
-                </li>
-            `).join('');
-
-            $('#placeTags').innerHTML = h.tags.map(tag => `<span class="chip bg-slate-700/50 !border-slate-600">${tag}</span>`).join('');
-
-            $('#peopleNow').textContent = fmt(h.persons);
-            $('#stayTime').textContent = `예상 평균 체류 ${h.stayHours}시간`;
-            $('#congestionScore').textContent = `${h.congestion}`;
-            const changeRateEl = $('#changeRate');
-            changeRateEl.textContent = `${(h.changeRate > 0 ? '▲' : '▼')} ${Math.abs(h.changeRate)}% (전일 대비)`;
-            changeRateEl.className = `text-sm mt-auto pt-1 ${h.changeRate > 0 ? 'text-red-400' : 'text-blue-400'}`;
-
-            $('#trafficSpeed').textContent = `${h.traffic} km/h`;
-            
-            const st = statusFrom(h.congestion);
-            const badge = $('#statusBadge');
-            badge.textContent = st.label;
-            badge.style.backgroundColor = hexToRGBA(st.color, 0.2);
-            badge.style.borderColor = st.color;
-            badge.style.color = st.color;
-
-            chart.data.datasets[0].data = h.hourly;
-            chart.update();
-            
-            const now = new Date();
-            const timeString = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-            $('#updatedAt').textContent = timeString + ' 기준';
-            $('#updatedAtChip').textContent = timeString + ' 기준';
-        }
-
-        function iconEmoji(type) {
-            return { parking: '🅿️', bike: '🚲', cctv: '📹', subway: '🚇', gate: '📍' }[type] || '📍';
-        }
-
-        function hexToRGBA(hex, a = 1) {
-            const h = hex.replace('#', '');
-            const [r, g, b] = [parseInt(h.substring(0, 2), 16), parseInt(h.substring(2, 4), 16), parseInt(h.substring(4, 6), 16)];
-            return `rgba(${r},${g},${b},${a})`;
-        }
-        
-        // Search and Dropdown Logic
-        const searchInput = $('#search-input');
-        const hotspotDropdown = $('#hotspot-dropdown');
-
-        function updateDropdown(filter = '') {
-            const filteredNames = Object.keys(hotspots).filter(name => name.toLowerCase().includes(filter.toLowerCase()));
-            if (filteredNames.length > 0 && filter) {
-                hotspotDropdown.innerHTML = filteredNames.map(name => 
-                    `<a href="#" class="block px-4 py-2 text-sm text-slate-200 hover:bg-indigo-600" data-name="${name}">${name}</a>`
-                ).join('');
-                hotspotDropdown.classList.remove('hidden');
-            } else {
-                hotspotDropdown.classList.add('hidden');
-            }
-        }
-
-        searchInput.addEventListener('input', () => updateDropdown(searchInput.value));
-        searchInput.addEventListener('focus', () => updateDropdown(searchInput.value));
-        
-        hotspotDropdown.addEventListener('click', (e) => {
-            if (e.target.tagName === 'A') {
-                e.preventDefault();
-                const name = e.target.dataset.name;
-                renderHotspot(name);
-                hotspotDropdown.classList.add('hidden');
-            }
-        });
-        
-        document.addEventListener('click', (e) => {
-            if (!$('#search-container').contains(e.target)) {
-                 hotspotDropdown.classList.add('hidden');
-            }
-        });
-        
-        // Route Planner Logic
-        const startSelect = $('#routeStart');
-        const endSelect = $('#routeEnd');
-        Object.keys(hotspots).forEach(name => {
-            startSelect.add(new Option(name, name));
-            endSelect.add(new Option(name, name));
-        });
-
-        $('#routeBtn').addEventListener('click', async () => {
-            const s = startSelect.value;
-            const e = endSelect.value;
-            if (!s || !e || s === e) {
-                alert('출발지와 도착지를 선택하세요.');
-                return;
-            }
-            const start = hotspots[s].center;
-            const end = hotspots[e].center;
-            try {
-                const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${start[1]},${start[0]};${end[1]},${end[0]}?geometries=geojson`);
-                const data = await res.json();
-                if (!data.routes || !data.routes.length) throw new Error('no route');
-                const coords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
-                if (routeLine) map.removeLayer(routeLine);
-                routeMarkers.forEach(m => map.removeLayer(m));
-                routeMarkers = [
-                    L.marker(start).addTo(map),
-                    L.marker(end).addTo(map)
-                ];
-                routeLine = L.polyline(coords, { color: '#4f46e5', weight: 5 }).addTo(map);
-                map.fitBounds(routeLine.getBounds());
-            } catch (err) {
-                alert('경로를 찾을 수 없습니다.');
-            }
-        });
-
-        // Layer Toggles
-        function updateLayerVisibility(btn) {
-            const key = btn.dataset.layer;
-            const grp = (key === 'congestion') ? heatLayer : layers[key];
-            if (!grp) return;
-
-            const on = btn.classList.contains('active');
-            if (map.hasLayer(grp) && !on) map.removeLayer(grp);
-            if (!map.hasLayer(grp) && on) grp.addTo(map);
-        }
-
-        $$('button[data-layer]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                btn.classList.toggle('active');
-                updateLayerVisibility(btn);
-            });
-        });
-
-        // Style Switch
-        $$('button[data-style]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                $$('button[data-style]').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                const v = btn.dataset.style;
-                [tilesAuto, tilesGray, tilesDark].forEach(t => map.removeLayer(t));
-                if (v === 'dark') tilesDark.addTo(map);
-                else if (v === 'gray') tilesGray.addTo(map);
-                else tilesAuto.addTo(map);
-            });
-        });
-
-        // Initial render
-        renderHotspot(Object.keys(hotspots)[0]);
-    });
-    </script>
+  document.getElementById('load').onclick = () => loadCity(document.getElementById('code').value);
+  loadCity('POI104'); // 최초 로드
+  </script>
 </body>
 </html>
