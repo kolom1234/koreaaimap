@@ -813,10 +813,7 @@ async function initApp(){
     };
     tick();
   };
-  window.addEventListener('DOMContentLoaded', () => {
-    const s = document.getElementById('naver-maps');
-    if (s?.complete) bootNaver(); else s?.addEventListener('load', bootNaver);
-  });
+  window.addEventListener('DOMContentLoaded', bootNaver);
 </script>
 
 </body>
