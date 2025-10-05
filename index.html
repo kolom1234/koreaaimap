@@ -3,41 +3,48 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>KoreaAiMap — 서울 도시데이터</title>
+  <title>KoreaAiMap — 서울 생활 인구 히트맵</title>
 
-  <!-- Tailwind (CDN, 간단 데모용) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"/>
-
   <meta name="theme-color" content="#0f172a"/>
   <style>
-    html,body,#app,#map{height:100%} body{font-family:Pretendard,system-ui,sans-serif}
-    .glass{background:rgba(15,23,42,.6);backdrop-filter:blur(10px) saturate(140%)}
-    .chip{font-size:12px;padding:.25rem .5rem;border:1px solid rgba(71,85,105,.5);border-radius:9999px}
-    .btn{padding:.5rem .75rem;border:1px solid rgba(71,85,105,.5);border-radius:12px;background:rgba(30,41,59,.6)}
-    .btn:hover{background:rgba(51,65,85,.7)}
-    .field{padding:.5rem .75rem;border-radius:10px;background:rgba(2,6,23,.6);border:1px solid rgba(51,65,85,.6)}
-    .shadow-soft{box-shadow:0 10px 30px rgba(0,0,0,.35)}
+    html,body,#app,#map{height:100%}
+    body{font-family:Pretendard,system-ui,sans-serif;background:#020617;color:#cbd5f5}
+    .glass{background:rgba(15,23,42,.68);backdrop-filter:blur(14px) saturate(160%)}
+    .chip{font-size:12px;padding:.25rem .5rem;border:1px solid rgba(71,85,105,.45);border-radius:9999px}
+    .btn{padding:.55rem .9rem;border:1px solid rgba(148,163,184,.35);border-radius:12px;background:rgba(30,41,59,.75);transition:all .2s ease}
+    .btn:hover{background:rgba(59,72,99,.82);transform:translateY(-1px)}
+    .field{padding:.55rem .85rem;border-radius:10px;background:rgba(2,6,23,.62);border:1px solid rgba(71,85,105,.55);width:100%}
+    .shadow-soft{box-shadow:0 20px 50px rgba(2,6,23,.55)}
+    .section-title{font-size:12px;text-transform:uppercase;letter-spacing:.18em;color:rgba(148,163,184,.8)}
+    .grid-divider{height:1px;background:linear-gradient(90deg,transparent,rgba(148,163,184,.35),transparent)}
+    table tbody tr:hover{background:rgba(79,70,229,.14)}
+    .tag{padding:.2rem .55rem;border-radius:9999px;font-size:11px;background:rgba(99,102,241,.18);color:#c7d2fe}
+    .tag.bus{background:rgba(59,130,246,.18);color:#bfdbfe}
+    .tag.subway{background:rgba(16,185,129,.2);color:#bbf7d0}
+    .tag.car{background:rgba(249,115,22,.2);color:#fed7aa}
+    .scroll-area{max-height:220px;overflow:auto}
+    #progressLog{max-height:150px;overflow:auto}
   </style>
 
-  <!-- NAVER Maps JS v3 (+ visualization). 콜백으로 초기화 타이밍 보장 -->
   <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=i0l4aehusw&submodules=visualization&callback=initApp"></script>
 </head>
-<body class="bg-slate-950 text-slate-200">
-  <!-- 헤더 -->
+<body>
   <header class="glass border-b border-slate-800/70 sticky top-0 z-40">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-col sm:flex-row gap-3 sm:gap-6 sm:items-center sm:justify-between">
       <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-rose-500"></div>
-        <div class="leading-tight">
-          <div class="text-sm text-slate-300">Sejong Univ. Capstone</div>
-          <h1 class="text-lg font-semibold">KoreaAiMap <span class="text-indigo-300 text-xs align-top">Seoul Citydata</span></h1>
+        <div class="w-9 h-9 rounded-2xl bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-rose-500 shadow-soft"></div>
+        <div>
+          <div class="text-xs text-slate-400">Sejong Univ. Capstone</div>
+          <h1 class="text-lg sm:text-xl font-semibold text-slate-100">KoreaAiMap <span class="text-indigo-300 text-xs align-top">Seoul Realtime Population</span></h1>
         </div>
       </div>
-      <div class="hidden md:flex items-center gap-3 text-sm">
-        <div class="chip">📍 <span id="placeLabel">-</span></div>
-        <div class="chip">🕒 <span id="updatedLabel">-</span></div>
-        <div class="chip">⏱ <span id="latencyLabel">-</span></div>
+      <div class="grid grid-cols-2 sm:flex gap-2 text-xs sm:text-sm text-slate-300">
+        <div class="chip">📍 대상지 <span id="summaryPlaceCount" class="font-semibold ml-1">-</span></div>
+        <div class="chip">👥 총 유동인구 <span id="summaryPopulation" class="font-semibold ml-1">-</span></div>
+        <div class="chip">🔥 최고 혼잡도 <span id="summaryBusiest" class="font-semibold ml-1">-</span></div>
+        <div class="chip">🕒 갱신 <span id="summaryUpdated" class="font-semibold ml-1">-</span></div>
       </div>
     </div>
   </header>
@@ -45,202 +52,709 @@
   <main id="app" class="relative">
     <div id="map"></div>
 
-    <!-- 컨트롤 패널 -->
-    <section class="absolute left-4 top-4 z-30 glass border border-slate-800/60 rounded-2xl p-3 sm:p-4 shadow-soft w-[min(92vw,460px)]">
-      <div class="flex items-center gap-2 mb-2">
-        <div class="text-xs text-slate-300">도시데이터</div>
-        <div class="chip">/reco/v1/citydata</div>
+    <section class="absolute left-4 top-4 z-30 glass border border-slate-800/60 rounded-3xl p-4 sm:p-6 shadow-soft w-[min(92vw,500px)] backdrop-blur">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <p class="section-title">Realtime Population Heatmap</p>
+          <h2 class="text-xl font-semibold text-slate-100 mt-1">서울시 주요 120 장소</h2>
+        </div>
+        <button id="refreshBtn" class="btn text-sm">🔄 새로고침</button>
+      </div>
+      <p class="text-xs text-slate-400 mt-2 leading-5">서울 열린데이터 광장 <span class="font-semibold text-indigo-200">CityData</span> API와 네이버 지도 시각화를 활용해 주요 거점의 실시간/예측 유동인구를 히트맵으로 표시합니다.</p>
+
+      <div class="grid-divider my-4"></div>
+
+      <div>
+        <div class="flex items-center justify-between text-xs text-slate-400">
+          <span>카테고리 필터</span>
+          <button id="selectAllBtn" class="text-indigo-300 hover:text-indigo-200">모두 선택</button>
+        </div>
+        <div id="categoryFilter" class="mt-2 grid grid-cols-2 gap-2 text-[13px]"></div>
       </div>
 
-      <div class="grid grid-cols-12 gap-2">
-        <div class="col-span-6 sm:col-span-5">
-          <label for="code" class="block text-xs text-slate-400 mb-1">POI 코드</label>
-          <input id="code" class="field w-full" value="POI104" placeholder="예: POI104"/>
+      <div class="grid-divider my-4"></div>
+
+      <div>
+        <div class="flex items-center justify-between text-xs text-slate-400">
+          <span>상위 혼잡 지역</span>
+          <span id="lastFetchLatency" class="text-slate-500">-</span>
         </div>
-        <div class="col-span-6 sm:col-span-7">
-          <label for="place" class="block text-xs text-slate-400 mb-1">장소(선택)</label>
-          <input id="place" class="field w-full" placeholder="예: 강남역"/>
+        <div class="scroll-area mt-2 border border-slate-800/70 rounded-2xl overflow-hidden">
+          <table class="w-full text-left text-sm text-slate-200/90">
+            <thead class="bg-slate-900/70 text-xs uppercase tracking-wide text-slate-400">
+              <tr>
+                <th class="px-3 py-2">순위</th>
+                <th class="px-3 py-2">장소</th>
+                <th class="px-3 py-2">혼잡</th>
+                <th class="px-3 py-2">추정 인구</th>
+              </tr>
+            </thead>
+            <tbody id="topTableBody" class="divide-y divide-slate-800/60"></tbody>
+          </table>
         </div>
-        <div class="col-span-12 flex items-center gap-2">
-          <button id="load" class="btn">불러오기</button>
-          <button id="locBtn" class="btn">내 위치로</button>
-          <span class="text-xs text-slate-400">캐시 60초</span>
-        </div>
+        <p class="text-[11px] text-slate-500 mt-1">행을 클릭하면 지도에서 해당 위치를 강조합니다.</p>
       </div>
 
-      <div id="note" class="mt-3 hidden"></div>
+      <div class="grid-divider my-4"></div>
+
+      <div>
+        <p class="section-title mb-2">진행 로그</p>
+        <div id="progressLog" class="text-xs leading-5 text-slate-400 bg-slate-900/60 border border-slate-800/70 rounded-2xl p-3 font-mono"></div>
+      </div>
+
+      <div class="grid-divider my-5"></div>
+
+      <div>
+        <p class="section-title">Door-to-Door 경로 탐색</p>
+        <h3 class="text-lg font-semibold text-slate-100 mt-1">출발·도착지별 최단시간</h3>
+        <p class="text-xs text-slate-400 mt-1 leading-5">네이버 지오코딩과 OSRM(차량), ODsay(대중교통) 오픈 API를 결합해 실제 거리/소요시간을 제공합니다. (ODsay 키를 window.ODSAY_API_KEY로 설정하면 버스/지하철 경로가 활성화됩니다.)</p>
+
+        <form id="routeForm" class="mt-3 space-y-3 text-sm">
+          <div class="grid grid-cols-6 gap-2">
+            <div class="col-span-6">
+              <label class="text-xs text-slate-400" for="routeStart">출발지</label>
+              <input id="routeStart" class="field" placeholder="예: 강남역" list="placeList"/>
+            </div>
+            <div class="col-span-6">
+              <label class="text-xs text-slate-400" for="routeEnd">도착지</label>
+              <input id="routeEnd" class="field" placeholder="예: 잠실롯데타워" list="placeList"/>
+            </div>
+            <div class="col-span-3">
+              <label class="text-xs text-slate-400" for="routeTime">출발 시간</label>
+              <input id="routeTime" type="datetime-local" class="field"/>
+            </div>
+            <div class="col-span-3">
+              <label class="text-xs text-slate-400" for="routeMode">교통 수단</label>
+              <select id="routeMode" class="field">
+                <option value="car">차량 (OSRM)</option>
+                <option value="bus">버스 (ODsay)</option>
+                <option value="subway">지하철 (ODsay)</option>
+              </select>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="submit" class="btn flex-1">🚀 경로 계산</button>
+            <button type="button" id="swapBtn" class="btn px-3">↕️</button>
+            <button type="button" id="myLocationBtn" class="btn px-3">📍</button>
+          </div>
+        </form>
+
+        <div id="routeNote" class="hidden mt-3 text-xs"></div>
+        <div id="routeResult" class="hidden mt-3 text-sm text-slate-200 bg-slate-900/60 border border-slate-800/70 rounded-2xl p-3 space-y-2"></div>
+      </div>
     </section>
 
-    <!-- 우하단 안내 -->
-    <aside class="absolute right-4 bottom-4 glass border border-slate-800/60 rounded-2xl p-3 shadow-soft text-[13px] leading-5 z-30">
-      <div>🔗 <a class="text-indigo-300 underline" href="https://api.koreaaimap.com/health" target="_blank" rel="noreferrer">API Health</a></div>
-      <div>🌐 CORS: <span class="text-slate-300">www.koreaaimap.com</span></div>
-      <div>🧠 Infer: <span class="text-slate-300">/infer (HMAC via Worker)</span></div>
+    <aside class="absolute right-4 bottom-4 glass border border-slate-800/60 rounded-2xl p-3 shadow-soft text-[13px] leading-5 z-20">
+      <div>🔗 <a class="text-indigo-300 underline" href="https://api.koreaaimap.com/health" target="_blank" rel="noreferrer">Worker Health</a></div>
+      <div>📡 데이터: <span class="text-slate-300">Seoul CityData · ODsay Transit · OSRM</span></div>
+      <div>🌐 CORS 허용 도메인: <span class="text-slate-300">koreaaimap.com</span></div>
     </aside>
 
-    <!-- 로딩 -->
-    <div id="spinner" class="hidden absolute inset-0 grid place-items-center z-20">
-      <div class="w-12 h-12 border-4 border-slate-700 border-t-indigo-400 rounded-full animate-spin"></div>
+    <div id="spinner" class="hidden absolute inset-0 grid place-items-center z-10 pointer-events-none">
+      <div class="w-14 h-14 border-4 border-slate-800 border-t-indigo-400 rounded-full animate-spin"></div>
     </div>
   </main>
 
+  <datalist id="placeList"></datalist>
+
 <script>
-/* ---------- 유틸 ---------- */
-const $ = (s)=>document.querySelector(s);
-const fmt = (d)=>new Date(d).toLocaleString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+const $ = (sel)=>document.querySelector(sel);
+const $$ = (sel)=>Array.from(document.querySelectorAll(sel));
 const apiBase = 'https://api.koreaaimap.com';
-const qp = (o)=>Object.entries(o).filter(([,v])=>v!=null&&v!=='').map(([k,v])=>`${k}=${encodeURIComponent(v)}`).join('&');
+const GEO_CACHE_KEY = 'koreaaimap:v1:geo-cache';
+const PLACES_URL = './places.json';
+const state = {
+  map:null,
+  heat:null,
+  dataset:[],
+  places:[],
+  filters:new Set(),
+  infoWindow:null,
+  polyline:null,
+  startMarker:null,
+  endMarker:null,
+  geoCache:null,
+  loading:false,
+  lastLatency:null
+};
 
-function showNote(msg,type='info'){
-  const el=$('#note');
-  el.className=type==='error'?'mt-3 text-sm text-rose-300 bg-rose-900/30 border border-rose-700/40 rounded-xl p-3'
-                             :'mt-3 text-sm text-emerald-300 bg-emerald-900/20 border border-emerald-700/30 rounded-xl p-3';
-  el.innerHTML=msg; el.classList.remove('hidden');
+function loadGeoCache(){
+  if(typeof localStorage==='undefined') return {};
+  try{
+    const raw=localStorage.getItem(GEO_CACHE_KEY);
+    if(!raw) return {};
+    const parsed=JSON.parse(raw);
+    return parsed&&typeof parsed==='object'?parsed:{};
+  }catch{
+    return {};
+  }
 }
-const hideNote=()=>$('#note').classList.add('hidden');
-const setSpin=(on)=>$('#spinner').classList[on?'remove':'add']('hidden');
-
-/* ---------- 지도/히트맵 ---------- */
-let map, heat;
-
-// visualization 서브모듈이 실제로 보일 때까지 대기(최대 2초)
-function waitVizReady(timeout=2000){
-  return new Promise((resolve,reject)=>{
-    const t0=performance.now();
-    (function tick(){
-      if (window.naver?.maps?.visualization?.HeatMap) return resolve();
-      if (performance.now()-t0>timeout) return reject(new Error('Visualization not ready'));
-      requestAnimationFrame(tick);
-    })();
-  });
+function saveGeoCache(){
+  if(typeof localStorage==='undefined') return;
+  try{ localStorage.setItem(GEO_CACHE_KEY, JSON.stringify(state.geoCache)); }catch{}
 }
 
-function initMap(){
-  map = new naver.maps.Map('map', {
-    center:new naver.maps.LatLng(37.5665,126.9780),
-    zoom:13, mapDataControl:true, logoControl:false, scaleControl:false,
-    zoomControl:true, zoomControlOptions:{position:naver.maps.Position.TOP_RIGHT}
-  });
+function logProgress(message){
+  const logEl=$('#progressLog');
+  const now=new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const entry=document.createElement('div');
+  entry.textContent=`[${now}] ${message}`;
+  logEl.appendChild(entry);
+  logEl.scrollTop=logEl.scrollHeight;
 }
 
-// LatLng[] 보장
-function toLatLngArray(data){
-  if(Array.isArray(data)&&data.length>0){
-    if(data[0] instanceof naver.maps.LatLng) return data;
-    if(data[0] && data[0].location instanceof naver.maps.LatLng){
-      return data.map(d=>d.location);
+function setSpinner(on){
+  state.loading=on;
+  $('#spinner').classList[on?'remove':'add']('hidden');
+}
+
+function numberOrNull(v){
+  if(v==null) return null;
+  const n=Number(String(v).replace(/,/g,''));
+  return Number.isFinite(n)?n:null;
+}
+
+function deepFind(obj,key){
+  if(!obj||typeof obj!=='object') return null;
+  const stack=[obj];
+  const visited=new Set();
+  while(stack.length){
+    const current=stack.pop();
+    if(!current||typeof current!=='object') continue;
+    if(visited.has(current)) continue;
+    visited.add(current);
+    if(Object.prototype.hasOwnProperty.call(current,key)) return current[key];
+    for(const value of Object.values(current)){
+      if(value&&typeof value==='object') stack.push(value);
     }
   }
-  return [];
+  return null;
+}
+async function fetchPlaces(){
+  const res=await fetch(PLACES_URL, {cache:'no-store'});
+  if(!res.ok) throw new Error('places.json 로드 실패');
+  const json=await res.json();
+  return json.map((p,i)=>({
+    ...p,
+    no:p.no ?? i+1
+  }));
 }
 
-/* ---------- 데모용 중심좌표 ---------- */
-const centerTable={
-  'POI104':'37.5483,127.0792','어린이대공원':'37.5483,127.0792',
-  'POI014':'37.4981,127.0276','강남역':'37.4981,127.0276',
-  'POI072':'37.5261,126.9315','여의도':'37.5261,126.9315'
-};
-function guessCenter(nameOrCode){
-  const s=centerTable[nameOrCode]; if(!s) return [37.5665,126.9780];
-  const [lat,lng]=s.split(',').map(Number); return [lat,lng];
-}
-function pickPopulationScore(categories){
-  const c=JSON.stringify(categories??{}).toLowerCase();
-  const m=c.match(/(congestion|ppltn|population).{0,20}?(\\d{1,3})/);
-  return Math.max(20,Math.min(100,m?Number(m[2]):60));
-}
-function jitter(center,score){
-  const [lat,lng]=center||[37.5665,126.9780];
-  const n=Math.round(30+score*.7), r=.004+score*.00002, pts=[];
-  for(let i=0;i<n;i++){
-    const a=Math.random()*Math.PI*2, d=Math.random()*r;
-    pts.push({location:new naver.maps.LatLng(lat+Math.cos(a)*d,lng+Math.sin(a)*d),weight:1+score/25});
-  }
-  return pts;
+function renderPlaceDatalist(){
+  const list=$('#placeList');
+  list.innerHTML = state.places.map(p=>`<option value="${p.name}">${p.code}</option>`).join('');
 }
 
-/* ---------- API ---------- */
-async function fetchCityData({code,place}){
-  const url=`${apiBase}/reco/v1/citydata?${qp({code,place})}`;
-  const t0=performance.now();
+function renderCategoryFilter(){
+  const container=$('#categoryFilter');
+  container.innerHTML='';
+  const categories=[...new Set(state.places.map(p=>p.category))];
+  if(state.filters.size===0) categories.forEach(c=>state.filters.add(c));
+  categories.forEach(category=>{
+    const id=`cat-${category.replace(/[^\w]/g,'')}`;
+    const label=document.createElement('label');
+    label.className='flex items-center gap-2 px-2 py-1 bg-slate-900/40 border border-slate-800/60 rounded-xl';
+    const checked=state.filters.has(category);
+    label.innerHTML=`<input type="checkbox" class="accent-indigo-400" data-category="${category}" id="${id}" ${checked?'checked':''}/> <span>${category}</span>`;
+    container.appendChild(label);
+  });
+  container.addEventListener('change',(e)=>{
+    const input=e.target.closest('input[data-category]');
+    if(!input) return;
+    if(input.checked){
+      state.filters.add(input.dataset.category);
+    }else{
+      state.filters.delete(input.dataset.category);
+    }
+    updateHeatmap();
+    renderSummary();
+    renderTopTable();
+  });
+}
+async function fetchCityData(code){
+  const url=`${apiBase}/reco/v1/citydata?code=${encodeURIComponent(code)}`;
+  const started=performance.now();
   const res=await fetch(url,{cache:'no-store'});
-  $('#latencyLabel').textContent=`${Math.round(performance.now()-t0)} ms`;
-  let json; try{ json=await res.json(); }catch{ throw new Error('API가 JSON을 반환하지 않았습니다'); }
-  if(!res.ok){ throw new Error(json?.error?.message||`HTTP ${res.status}`); }
+  if(!res.ok){
+    const text=await res.text();
+    throw new Error(`CityData 오류(${res.status}): ${text}`);
+  }
+  const json=await res.json();
+  state.lastLatency = performance.now()-started;
   return json;
 }
 
-/* ---------- 액션 ---------- */
-async function loadCity(){
-  hideNote(); setSpin(true);
-  try{
-    const code=$('#code').value.trim(), place=$('#place').value.trim();
-    if(!code && !place) throw new Error('POI 코드 또는 장소를 입력하세요.');
-
-    const data=await fetchCityData({code,place});
-
-    const label=data?.place?.name||data?.place?.code||(code||place); $('#placeLabel').textContent=label??'-';
-    $('#updatedLabel').textContent=data?.updatedAt?fmt(data.updatedAt):'-';
-
-    const center=guessCenter(label);
-    map.setCenter(new naver.maps.LatLng(center[0],center[1])); map.setZoom(15);
-
-    const pop=pickPopulationScore(data?.categories);
-    const latlngs=toLatLngArray(jitter(center,pop));
-
-    // 첫 로드에서 생성 → 그 뒤에는 setData만
-    if(!heat){
-      heat = new naver.maps.visualization.HeatMap({
-        map, radius:30, opacity:0.7, dissipating:true, data: latlngs
-      });
-    }else{
-      heat.setData(latlngs);
-    }
-    showNote(`✅ <b>${label}</b> 데이터 갱신 완료 (score≈${pop})`,'info');
-  }catch(err){
-    const msg=String(err?.message||err);
-    if(msg.includes('Failed to fetch')){
-      showNote('❌ API 호출 실패: 네트워크/CORS 설정을 확인하세요 (api.koreaaimap.com).','error');
-    }else{
-      showNote(`❌ ${msg}`,'error');
-    }
-    console.error(err);
-  }finally{ setSpin(false); }
+function extractLiveStats(categories){
+  const live=deepFind(categories,'LIVE_PPLTN_STTS');
+  const fcst=deepFind(categories,'FCST_PPLTN_STTS');
+  const road=deepFind(categories,'ROAD_TRAFFIC_STTS');
+  if(!live) return { raw: categories };
+  return {
+    index: numberOrNull(live.LIVE_PPLTN_INDEX ?? live.AREA_PPLTN_INDEX),
+    level: live.AREA_CONGEST_LVL || live.AREA_CONGEST_MSG || live.AREA_CONGEST_LVL_CD,
+    message: live.AREA_CONGEST_MSG || null,
+    population: numberOrNull(live.PPLTN_CNT ?? live.TOT_PPLTN ?? live.PPLTN_NUM),
+    maleRate: numberOrNull(live.MALE_PPLTN_RATE),
+    femaleRate: numberOrNull(live.FEMALE_PPLTN_RATE),
+    youngRate: numberOrNull(live.YNG_PPLTN_RATE ?? live.JUVENILE_PPLTN_RATE),
+    oldRate: numberOrNull(live.AGE_60_ABOVE_PPLTN_RATE ?? live.OLD_PPLTN_RATE),
+    foreignersRate: numberOrNull(live.FOREIGN_PPLTN_RATE),
+    dataTime: live.LIVE_PPLTN_TIME || live.LIVE_PPLTN_DT || live.DATA_TIME || live.PPLTN_TIME,
+    roadSpeed: road?.ROAD_TRAFFIC_SPD ? numberOrNull(road.ROAD_TRAFFIC_SPD) : null,
+    fcstLevel: fcst?.AREA_CONGEST_LVL || fcst?.AREA_CONGEST_MSG || null,
+    fcstTime: fcst?.FCST_PPLTN_TIME || fcst?.FCST_PPLTN_DT || null,
+    raw: live
+  };
+}
+async function geocodeWithNaver(query){
+  return await new Promise((resolve,reject)=>{
+    naver.maps.Service.geocode({ query }, (status,response)=>{
+      if(status!==naver.maps.Service.Status.OK){
+        return reject(new Error('네이버 지오코딩 실패: '+status));
+      }
+      const item=response?.v2?.addresses?.[0];
+      if(!item) return reject(new Error('지오코딩 결과 없음'));
+      resolve({ lat:parseFloat(item.y), lng:parseFloat(item.x) });
+    });
+  });
 }
 
-function toMyLocation(){
-  if(!('geolocation' in navigator)){
-    return showNote('이 브라우저는 위치 기능을 지원하지 않습니다.','error');
+async function ensureCoordinate(place){
+  if(!state.geoCache) state.geoCache=loadGeoCache();
+  const cached=state.geoCache[place.code];
+  if(cached) return cached;
+  const query=`${place.name} 서울`;
+  const coord=await geocodeWithNaver(query);
+  state.geoCache[place.code]=coord;
+  saveGeoCache();
+  return coord;
+}
+function renderSummary(){
+  const active=state.dataset.filter(d=>!d.error && state.filters.has(d.place.category));
+  $('#summaryPlaceCount').textContent=`${active.length}/${state.places.length}`;
+  if(active.length===0){
+    $('#summaryPopulation').textContent='-';
+    $('#summaryBusiest').textContent='-';
+    $('#summaryUpdated').textContent='-';
+    return;
   }
-  // Geolocation은 보안 컨텍스트(HTTPS)에서만 동작. :contentReference[oaicite:4]{index=4}
-  navigator.geolocation.getCurrentPosition(
-    pos=>{
-      const {latitude,longitude}=pos.coords;
-      map.setCenter(new naver.maps.LatLng(latitude,longitude)); map.setZoom(15);
-    },
-    err=>{
-      const why={1:'권한 거부됨',2:'위치 결정 불가',3:'시간 초과'}[err.code]||'알 수 없는 오류';
-      showNote(`현재 위치를 가져올 수 없습니다 (${why}).`,'error');
-    },
-    {enableHighAccuracy:false,timeout:8000,maximumAge:30000}
-  );
+  const totalPop=active.reduce((sum,item)=>sum+(item.live.population??0),0);
+  $('#summaryPopulation').textContent=totalPop?`${Math.round(totalPop).toLocaleString()}명`:'-';
+  const busiest=[...active].sort((a,b)=>{
+    const byIdx=(b.live.index??0)-(a.live.index??0);
+    if(byIdx!==0) return byIdx;
+    return (b.live.population??0)-(a.live.population??0);
+  })[0];
+  $('#summaryBusiest').textContent = busiest?`${busiest.place.name} (${busiest.live.level||'정보없음'})`:'-';
+  const latest=active.reduce((max,item)=>{
+    const t=new Date(item.updatedAt||0).getTime();
+    return t>max?t:max;
+  },0);
+  $('#summaryUpdated').textContent=latest?new Date(latest).toLocaleString('ko-KR',{hour:'2-digit',minute:'2-digit'}):'-';
+  if(state.lastLatency){
+    $('#lastFetchLatency').textContent=`API ${Math.round(state.lastLatency)} ms`;
+  }
 }
 
-/* ---------- 로더 콜백 ---------- */
+function renderTopTable(){
+  const body=$('#topTableBody');
+  const active=state.dataset.filter(d=>!d.error && state.filters.has(d.place.category));
+  const sorted=[...active].sort((a,b)=>(b.live.population??0)-(a.live.population??0)).slice(0,12);
+  body.innerHTML = sorted.map((item,idx)=>{
+    const pop=item.live.population?`${Math.round(item.live.population).toLocaleString()}명`:'-';
+    const lvl=item.live.level||'-';
+    return `<tr class="cursor-pointer" data-code="${item.place.code}"><td class="px-3 py-2 text-slate-400">${idx+1}</td><td class="px-3 py-2">${item.place.name}</td><td class="px-3 py-2">${lvl}</td><td class="px-3 py-2">${pop}</td></tr>`;
+  }).join('');
+}
+
+function computeHeatData(){
+  const active=state.dataset.filter(d=>!d.error && d.coord && state.filters.has(d.place.category));
+  if(active.length===0) return [];
+  const maxPop=Math.max(...active.map(d=>d.live.population||0),0);
+  const maxIdx=Math.max(...active.map(d=>d.live.index||0),0);
+  return active.map(item=>{
+    let weight=0.4;
+    if(item.live.population && maxPop>0){
+      weight=Math.max(0.25, Math.min(1.4, (item.live.population/maxPop)*1.15));
+    }else if(item.live.index && maxIdx>0){
+      weight=Math.max(0.25, Math.min(1.15, item.live.index/maxIdx));
+    }
+    if(item.live.level){
+      if(/붐빔|혼잡|crowd/i.test(item.live.level)) weight+=0.1;
+      if(/원활|여유|smooth/i.test(item.live.level)) weight-=0.05;
+    }
+    return {
+      location:new naver.maps.LatLng(item.coord.lat,item.coord.lng),
+      weight,
+      meta:item
+    };
+  });
+}
+
+function updateHeatmap(){
+  if(!state.map) return;
+  const data=computeHeatData();
+  if(!state.heat){
+    state.heat=new naver.maps.visualization.HeatMap({
+      map: state.map,
+      data,
+      radius:45,
+      opacity:0.75,
+      gradient:{
+        0.2:'rgba(59,130,246,0.25)',
+        0.4:'rgba(56,189,248,0.4)',
+        0.6:'rgba(99,102,241,0.6)',
+        0.8:'rgba(236,72,153,0.85)',
+        1.0:'rgba(249,115,22,0.95)'
+      }
+    });
+  }else{
+    state.heat.setData(data);
+  }
+}
+function highlightPlace(item){
+  if(!state.map||!item?.coord) return;
+  const latLng=new naver.maps.LatLng(item.coord.lat,item.coord.lng);
+  state.map.setZoom(15);
+  state.map.panTo(latLng,{duration:400});
+  if(!state.infoWindow){
+    state.infoWindow=new naver.maps.InfoWindow({ anchorSkew:true, maxWidth:280 });
+  }
+  const pop=item.live.population?`${Math.round(item.live.population).toLocaleString()}명`:'데이터 없음';
+  const html=`<div class="p-2">`
+    +`<div class="text-xs text-indigo-200">${item.place.category} · ${item.place.code}</div>`
+    +`<div class="text-base font-semibold text-slate-100 mt-1">${item.place.name}</div>`
+    +`<div class="text-xs text-slate-400 mt-1">실시간 혼잡도: <span class="text-slate-100">${item.live.level||'정보없음'}</span></div>`
+    +`<div class="text-xs text-slate-400">추정 유동인구: <span class="text-slate-100">${pop}</span></div>`
+    +(item.live.message?`<div class="text-xs text-slate-500 mt-1">${item.live.message}</div>`:'')
+    +`</div>`;
+  state.infoWindow.setContent(html);
+  state.infoWindow.open(state.map, latLng);
+}
+
+function attachTopTable(){
+  $('#topTableBody').addEventListener('click',(e)=>{
+    const row=e.target.closest('tr[data-code]');
+    if(!row) return;
+    const item=state.dataset.find(d=>d.place.code===row.dataset.code);
+    if(item) highlightPlace(item);
+  });
+}
+function clearRouteVisualization(){
+  if(state.polyline){ state.polyline.setMap(null); state.polyline=null; }
+  if(state.startMarker){ state.startMarker.setMap(null); state.startMarker=null; }
+  if(state.endMarker){ state.endMarker.setMap(null); state.endMarker=null; }
+}
+
+function drawRouteOnMap(points, mode){
+  if(!state.map || !points || points.length===0) return;
+  clearRouteVisualization();
+  const path=points.map(p=>new naver.maps.LatLng(p.lat,p.lng));
+  const color=mode==='car'?'#f97316':mode==='bus'?'#38bdf8':'#34d399';
+  state.polyline=new naver.maps.Polyline({
+    map: state.map,
+    path,
+    strokeColor:color,
+    strokeOpacity:0.9,
+    strokeWeight:5
+  });
+  const bounds=path.reduce((b,latLng)=>{
+    if(!b) return new naver.maps.LatLngBounds(latLng,latLng);
+    b.extend(latLng);
+    return b;
+  },null);
+  if(bounds){ state.map.fitBounds(bounds,{top:80,left:80,right:80,bottom:120}); }
+  state.startMarker=new naver.maps.Marker({
+    map: state.map,
+    position:path[0],
+    icon:{ content:'<div class="tag car">출발</div>', anchor:new naver.maps.Point(10,10) }
+  });
+  state.endMarker=new naver.maps.Marker({
+    map: state.map,
+    position:path[path.length-1],
+    icon:{ content:'<div class="tag">도착</div>', anchor:new naver.maps.Point(10,10) }
+  });
+}
+
+function showRouteMessage(html,type='info'){
+  const note=$('#routeNote');
+  note.className= type==='error' ? 'mt-3 text-xs text-rose-300 bg-rose-900/40 border border-rose-700/40 rounded-xl p-3' : 'mt-3 text-xs text-emerald-200 bg-emerald-900/20 border border-emerald-700/30 rounded-xl p-3';
+  note.innerHTML=html;
+  note.classList.remove('hidden');
+}
+function hideRouteMessage(){
+  $('#routeNote').classList.add('hidden');
+}
+
+function renderRouteResult(data){
+  const container=$('#routeResult');
+  if(!data){ container.classList.add('hidden'); return; }
+  const distanceKm=(data.distance/1000).toFixed(2);
+  const durationMin=Math.round(data.duration/60);
+  let html=`<div class="flex items-center justify-between"><div class="text-sm font-semibold">${data.title}</div><span class="tag ${data.mode}">${data.mode==='car'?'차량':data.mode==='bus'?'버스':'지하철'}</span></div>`;
+  html+=`<div class="text-sm text-slate-300">총 거리 <b>${distanceKm} km</b> · 예상 시간 <b>${durationMin} 분</b></div>`;
+  if(data.details){ html+=`<div class="text-xs text-slate-400 leading-5">${data.details}</div>`; }
+  if(data.fare!=null){ html+=`<div class="text-xs text-slate-400">예상 요금 <span class="text-slate-100">${data.fare.toLocaleString()}원</span></div>`; }
+  if(data.transferCount!=null){ html+=`<div class="text-xs text-slate-400">환승 ${data.transferCount}회</div>`; }
+  if(data.provider){ html+=`<div class="text-[11px] text-slate-500">데이터 출처: ${data.provider}</div>`; }
+  container.innerHTML=html;
+  container.classList.remove('hidden');
+}
+async function fetchDrivingRoute(start,end){
+  const coords=`${start.lng},${start.lat};${end.lng},${end.lat}`;
+  const url=`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&alternatives=false`;
+  const res=await fetch(url);
+  if(!res.ok) throw new Error('OSRM 경로 계산 실패');
+  const json=await res.json();
+  const route=json.routes?.[0];
+  if(!route) throw new Error('차량 경로를 찾을 수 없습니다');
+  return {
+    provider:'OSRM (OpenStreetMap)',
+    mode:'car',
+    distance:route.distance,
+    duration:route.duration,
+    geometry:route.geometry
+  };
+}
+
+async function fetchTransitRoute(mode,start,end,departureTime){
+  const key=window.ODSAY_API_KEY;
+  if(!key) throw new Error('window.ODSAY_API_KEY가 설정되어야 대중교통 경로를 사용할 수 있습니다.');
+  const params=new URLSearchParams({
+    lang:'0',
+    SX:start.lng,
+    SY:start.lat,
+    EX:end.lng,
+    EY:end.lat,
+    SearchPathType: mode==='bus'?'2':'1',
+    apiKey:key
+  });
+  if(departureTime){
+    const dt=new Date(departureTime);
+    if(!Number.isNaN(dt.getTime())){
+      params.set('SearchType','1');
+      params.set('SearchHour',String(dt.getHours()).padStart(2,'0'));
+      params.set('SearchMinute',String(dt.getMinutes()).padStart(2,'0'));
+    }
+  }
+  const res=await fetch(`https://api.odsay.com/v1/api/searchPubTransPathT?${params.toString()}`);
+  if(!res.ok) throw new Error('ODsay API 호출 실패');
+  const json=await res.json();
+  if(json?.error) throw new Error(json.error.msg||'대중교통 API 오류');
+  const path=json.result?.path?.[0];
+  if(!path) throw new Error('해당 구간의 대중교통 경로가 없습니다');
+  const info=path.info;
+  const distance=info.totalDistance*1;
+  const duration=info.totalTime*60;
+  const segments=(path.subPath||[]).map(seg=>({
+    type:seg.trafficType,
+    sectionTime:seg.sectionTime,
+    lane:seg.lane,
+    passStopList:seg.passStopList?.stations||[]
+  }));
+  return {
+    provider:'ODsay Public Transit',
+    mode:mode,
+    distance,
+    duration,
+    fare:info.payment,
+    transferCount:info.transfer,
+    segments
+  };
+}
+function segmentsToPolyline(segments,start,end){
+  const coords=[];
+  const push=(lat,lng)=>{ if(Number.isFinite(lat)&&Number.isFinite(lng)) coords.push({lat,lng}); };
+  push(start.lat,start.lng);
+  segments.forEach(seg=>{
+    const stops=seg.passStopList||[];
+    stops.forEach(stop=>{
+      const lat=parseFloat(stop.y);
+      const lng=parseFloat(stop.x);
+      push(lat,lng);
+    });
+  });
+  push(end.lat,end.lng);
+  return coords;
+}
+async function resolvePlace(input){
+  const text=input.trim();
+  if(!text) throw new Error('장소를 입력하세요');
+  const byCode=state.places.find(p=>p.code.toLowerCase()===text.toLowerCase());
+  if(byCode){
+    const coord=await ensureCoordinate(byCode);
+    return { name:byCode.name, code:byCode.code, coord };
+  }
+  const byName=state.places.find(p=>p.name===text);
+  if(byName){
+    const coord=await ensureCoordinate(byName);
+    return { name:byName.name, code:byName.code, coord };
+  }
+  if(text.startsWith('현재 위치') && state.geoCache?.currentLocation){
+    return { name:text, code:null, coord:state.geoCache.currentLocation };
+  }
+  const geocoded=await geocodeWithNaver(`${text} 서울`);
+  return { name:text, code:null, coord:geocoded };
+}
+async function planRoute(event){
+  event.preventDefault();
+  hideRouteMessage();
+  renderRouteResult(null);
+  clearRouteVisualization();
+  try{
+    const startInput=$('#routeStart').value;
+    const endInput=$('#routeEnd').value;
+    const mode=$('#routeMode').value;
+    const departure=$('#routeTime').value;
+    if(!startInput||!endInput) throw new Error('출발지와 도착지를 모두 입력하세요.');
+    const start=await resolvePlace(startInput);
+    const end=await resolvePlace(endInput);
+    let result;
+    if(mode==='car'){
+      result=await fetchDrivingRoute(start.coord,end.coord);
+      const coords=result.geometry?.coordinates?.map(([lng,lat])=>({lat,lng}))||[start.coord,end.coord];
+      drawRouteOnMap(coords,'car');
+      result.title=`${start.name||'출발지'} → ${end.name||'도착지'}`;
+      renderRouteResult({ ...result, details:'실시간 교통 정보가 반영되지 않은 평균 속도 기반 경로입니다.' });
+    }else{
+      result=await fetchTransitRoute(mode,start.coord,end.coord,departure);
+      const coords=segmentsToPolyline(result.segments,start.coord,end.coord);
+      drawRouteOnMap(coords,mode);
+      const segmentsDescription=result.segments.map(seg=>{
+        if(seg.type===1) return '지하철 '+(seg.lane?.map(l=>l.name||'노선').join('/')||'');
+        if(seg.type===2) return '버스 '+(seg.lane?.map(l=>l.busNo||'노선').join('/')||'');
+        return '도보';
+      }).filter(Boolean).join(' → ');
+      renderRouteResult({
+        ...result,
+        title:`${start.name||'출발지'} → ${end.name||'도착지'}`,
+        details:segmentsDescription||'세부 경로 정보를 가져올 수 없습니다.'
+      });
+    }
+  }catch(err){
+    showRouteMessage(`❌ ${err.message || err}`,'error');
+  }
+}
+async function loadPopulationDataset(){
+  const results=[];
+  let cursor=0;
+  const concurrency=6;
+  const workers=Array.from({length:concurrency},()=> (async function worker(){
+    while(true){
+      const index=cursor++;
+      if(index>=state.places.length) break;
+      const place=state.places[index];
+      logProgress(`(${index+1}/${state.places.length}) ${place.name} 데이터 로드 중...`);
+      const entry={ place };
+      try{
+        const data=await fetchCityData(place.code);
+        entry.raw=data;
+        entry.updatedAt=data.updatedAt;
+        entry.live=extractLiveStats(data.categories);
+        entry.coord=await ensureCoordinate(place);
+        logProgress(`✅ ${place.name} 수집 완료`);
+      }catch(err){
+        console.error(err);
+        entry.error=err;
+        logProgress(`❌ ${place.name} 실패: ${err.message||err}`);
+      }
+      results.push(entry);
+    }
+  })());
+  await Promise.all(workers);
+  return results.sort((a,b)=>a.place.no-b.place.no);
+}
+function attachControls(){
+  $('#refreshBtn').addEventListener('click', async()=>{
+    setSpinner(true);
+    state.dataset=await loadPopulationDataset();
+    setSpinner(false);
+    updateHeatmap();
+    renderSummary();
+    renderTopTable();
+    showRouteMessage('✅ 모든 데이터를 새로고침했습니다.','info');
+  });
+  $('#routeForm').addEventListener('submit', planRoute);
+  $('#swapBtn').addEventListener('click',()=>{
+    const a=$('#routeStart');
+    const b=$('#routeEnd');
+    const tmp=a.value; a.value=b.value; b.value=tmp;
+  });
+  $('#myLocationBtn').addEventListener('click',()=>{
+    if(!('geolocation' in navigator)){
+      showRouteMessage('이 브라우저는 위치 기능을 지원하지 않습니다.','error');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(pos=>{
+      const { latitude, longitude } = pos.coords;
+      $('#routeStart').value=`현재 위치 (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
+      state.geoCache.currentLocation={lat:latitude,lng:longitude};
+      saveGeoCache();
+    },err=>{
+      showRouteMessage(`현재 위치를 가져올 수 없습니다 (${err.code}).`,'error');
+    },{enableHighAccuracy:false,timeout:8000,maximumAge:30000});
+  });
+}
+function setupCategoryButton(){
+  const btn=$('#selectAllBtn');
+  btn.onclick=(e)=>{
+    e.preventDefault();
+    const categories=[...new Set(state.places.map(p=>p.category))];
+    const allSelected=categories.every(cat=>state.filters.has(cat));
+    if(allSelected){
+      state.filters.clear();
+    }else{
+      state.filters=new Set(categories);
+    }
+    $('#categoryFilter').querySelectorAll('input[data-category]').forEach(inp=>{
+      inp.checked = state.filters.has(inp.dataset.category);
+    });
+    updateHeatmap();
+    renderSummary();
+    renderTopTable();
+  };
+}
+function waitForVisualization(timeout=2000){
+  return new Promise((resolve,reject)=>{
+    const start=performance.now();
+    (function loop(){
+      if(window.naver?.maps?.visualization?.HeatMap) return resolve();
+      if(performance.now()-start>timeout) return reject(new Error('HeatMap 모듈 로드 지연'));
+      requestAnimationFrame(loop);
+    })();
+  });
+}
 async function initApp(){
   try{
-    // visualization 준비 안전 대기(문서상 콜백이면 로드 완료지만, 안전망 추가) :contentReference[oaicite:5]{index=5}
-    await waitVizReady(2000);
-    initMap();
-    $('#load').addEventListener('click', loadCity);
-    $('#locBtn').addEventListener('click', toMyLocation);
-    $('#code').addEventListener('keydown', e=>e.key==='Enter'&&loadCity());
-    $('#place').addEventListener('keydown', e=>e.key==='Enter'&&loadCity());
-    hideNote();              // 혹시 남아있던 실패 배너 제거
-    loadCity();              // 최초 1회
-  }catch(e){
-    showNote('네이버 지도 스크립트를 불러오지 못했습니다.','error');
-    console.error(e);
+    state.geoCache=loadGeoCache();
+    await waitForVisualization(4000);
+    state.map=new naver.maps.Map('map',{
+      center:new naver.maps.LatLng(37.5665,126.9780),
+      zoom:13,
+      mapDataControl:true,
+      logoControl:false,
+      zoomControl:true,
+      zoomControlOptions:{ position:naver.maps.Position.TOP_RIGHT }
+    });
+    state.infoWindow=new naver.maps.InfoWindow({ anchorSkew:true, maxWidth:280 });
+    state.places=await fetchPlaces();
+    state.filters=new Set(state.places.map(p=>p.category));
+    renderPlaceDatalist();
+    renderCategoryFilter();
+    setupCategoryButton();
+    attachTopTable();
+    attachControls();
+    setSpinner(true);
+    state.dataset=await loadPopulationDataset();
+    setSpinner(false);
+    updateHeatmap();
+    renderSummary();
+    renderTopTable();
+    logProgress('모든 데이터를 불러왔습니다. 히트맵이 최신 상태입니다.');
+  }catch(err){
+    console.error(err);
+    setSpinner(false);
+    showRouteMessage('네이버 지도 또는 데이터 로딩 중 문제가 발생했습니다. 콘솔을 확인하세요.','error');
   }
 }
 </script>
