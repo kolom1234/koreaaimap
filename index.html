@@ -109,7 +109,7 @@
       <div>
         <p class="section-title">Door-to-Door 경로 탐색</p>
         <h3 class="text-lg font-semibold text-slate-100 mt-1">출발·도착지별 최단시간</h3>
-        <p class="text-xs text-slate-400 mt-1 leading-5">네이버 지오코딩과 OSRM(차량), ODsay(대중교통) 오픈 API를 결합해 실제 거리/소요시간을 제공합니다. (ODsay 키를 window.ODSAY_API_KEY로 설정하면 버스/지하철 경로가 활성화됩니다.)</p>
+        <p class="text-xs text-slate-400 mt-1 leading-5">네이버 지오코딩과 오픈 API를 결합해 실제 거리/소요시간을 제공합니다.</p>
 
         <form id="routeForm" class="mt-3 space-y-3 text-sm">
           <div class="grid grid-cols-6 gap-2">
@@ -543,7 +543,7 @@ async function fetchDrivingRoute(start,end){
 
 async function fetchTransitRoute(mode,start,end,departureTime){
   const key=window.ODSAY_API_KEY;
-  if(!key) throw new Error('window.ODSAY_API_KEY가 설정되어야 대중교통 경로를 사용할 수 있습니다.');
+  if(!key) throw new Error('추가 로직이 구축되어야 대중교통 경로를 사용할 수 있습니다.');
   const params=new URLSearchParams({
     lang:'0',
     SX:start.lng,
