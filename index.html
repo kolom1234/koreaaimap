@@ -128,9 +128,9 @@
             <div class="col-span-3">
               <label class="text-xs text-slate-400" for="routeMode">교통 수단</label>
               <select id="routeMode" class="field">
-                <option value="car">차량 (OSRM)</option>
-                <option value="bus">버스 (ODsay)</option>
-                <option value="subway">지하철 (ODsay)</option>
+                <option value="car">차량 (실시간 소통 반영)</option>
+                <option value="bus" disabled>버스 (준비중)</option>
+                <option value="subway" disabled>지하철 (준비중)</option>
               </select>
             </div>
           </div>
@@ -273,16 +273,16 @@ function renderCategoryFilter(){
     renderTopTable();
   });
 }
+
+const qs = (o)=>new URLSearchParams(
+  Object.entries(o).filter(([,v])=>v!=null&&v!=='')
+).toString();
+  
 async function fetchCityData(code){
-  const url = `${API_BASE}/reco/v1/citydata?${qs({ code: placeCode })}`;
-  const started=performance.now();
-  const res=await fetch(url,{cache:'no-store'});
-  if(!res.ok){
-    const text=await res.text();
-    throw new Error(`CityData 오류(${res.status}): ${text}`);
-  }
+  const url = `${apiBase}/reco/v1/citydata?${qs({ code })}`;
+  const started = performance.now();
   const json = await fetchJSONWithRetry(url, { tries: 2, delay: 400 });
-  state.lastLatency = performance.now()-started;
+  state.lastLatency = performance.now() - started;
   return json;
 }
 
@@ -334,20 +334,23 @@ async function geocodeWithNaver(query){
 }
 
 async function ensureCoordinate(place){
-  const cached = loadGeoCache(place.name);
+  const key = place.name;
+  const cached = state.geoCache?.[key];
   if (cached) return cached;
 
-  try {
-    const a = await geocodeWithNaver(place.name);
-    saveGeoCache(place.name, a);
+  try{
+    const a = await geocodeWithNaver(key);
+    state.geoCache[key] = a;    // 저장
+    saveGeoCache();             // 전체 덤프 저장
     return a;
-  } catch (_) {
-    // 폴백 시도
-    const b = await geocodeWithOSM(place.name);
-    saveGeoCache(place.name, b);
+  }catch(_){
+    const b = await geocodeWithOSM(key);
+    state.geoCache[key] = b;
+    saveGeoCache();
     return b;
   }
 }
+
   
 function renderSummary(){
   const active=state.dataset.filter(d=>!d.error && state.filters.has(d.place.category));
