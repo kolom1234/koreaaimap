@@ -1,0 +1,842 @@
+[
+    {
+        "category": "\uad00\uad11\ud2b9\uad6c",
+        "no": 1,
+        "code": "POI001",
+        "name": "\uac15\ub0a8 MICE \uad00\uad11\ud2b9\uad6c",
+        "engName": "Gangnam MICE Special Tourist Zone"
+    },
+    {
+        "category": "\uad00\uad11\ud2b9\uad6c",
+        "no": 2,
+        "code": "POI002",
+        "name": "\ub3d9\ub300\ubb38 \uad00\uad11\ud2b9\uad6c",
+        "engName": "Dongdaemun Fashion Town Special Tourist Zone"
+    },
+    {
+        "category": "\uad00\uad11\ud2b9\uad6c",
+        "no": 3,
+        "code": "POI003",
+        "name": "\uba85\ub3d9 \uad00\uad11\ud2b9\uad6c",
+        "engName": "Myeong-dong Namdaemun Bukchang-dong Da-dong Mugyo-dong Special Tourist Zone"
+    },
+    {
+        "category": "\uad00\uad11\ud2b9\uad6c",
+        "no": 4,
+        "code": "POI004",
+        "name": "\uc774\ud0dc\uc6d0 \uad00\uad11\ud2b9\uad6c",
+        "engName": "Itaewon Special Tourist Zone"
+    },
+    {
+        "category": "\uad00\uad11\ud2b9\uad6c",
+        "no": 5,
+        "code": "POI005",
+        "name": "\uc7a0\uc2e4 \uad00\uad11\ud2b9\uad6c",
+        "engName": "Jamsil Special Tourist Zone"
+    },
+    {
+        "category": "\uad00\uad11\ud2b9\uad6c",
+        "no": 6,
+        "code": "POI006",
+        "name": "\uc885\ub85c\u00b7\uccad\uacc4 \uad00\uad11\ud2b9\uad6c",
+        "engName": "Jongno Cheonggye Special Toruist Zone"
+    },
+    {
+        "category": "\uad00\uad11\ud2b9\uad6c",
+        "no": 7,
+        "code": "POI007",
+        "name": "\ud64d\ub300 \uad00\uad11\ud2b9\uad6c",
+        "engName": "HongDae Culture & Arts Special Tourist Zone"
+    },
+    {
+        "category": "\uace0\uad81\u00b7\ubb38\ud654\uc720\uc0b0",
+        "no": 8,
+        "code": "POI008",
+        "name": "\uacbd\ubcf5\uad81",
+        "engName": "Gyeongbokgung Palace"
+    },
+    {
+        "category": "\uace0\uad81\u00b7\ubb38\ud654\uc720\uc0b0",
+        "no": 9,
+        "code": "POI009",
+        "name": "\uad11\ud654\ubb38\u00b7\ub355\uc218\uad81",
+        "engName": "Gwanghwamun & Deoksugung Palace"
+    },
+    {
+        "category": "\uace0\uad81\u00b7\ubb38\ud654\uc720\uc0b0",
+        "no": 10,
+        "code": "POI010",
+        "name": "\ubcf4\uc2e0\uac01",
+        "engName": "Bosingak"
+    },
+    {
+        "category": "\uace0\uad81\u00b7\ubb38\ud654\uc720\uc0b0",
+        "no": 11,
+        "code": "POI011",
+        "name": "\uc11c\uc6b8 \uc554\uc0ac\ub3d9 \uc720\uc801",
+        "engName": "Amsa Prehistoric Settlement Site"
+    },
+    {
+        "category": "\uace0\uad81\u00b7\ubb38\ud654\uc720\uc0b0",
+        "no": 12,
+        "code": "POI012",
+        "name": "\ucc3d\ub355\uad81\u00b7\uc885\ubb18",
+        "engName": "Changdeokgung Palace & Jongmyo Shrine"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 13,
+        "code": "POI013",
+        "name": "\uac00\uc0b0\ub514\uc9c0\ud138\ub2e8\uc9c0\uc5ed",
+        "engName": "Gasan Digital Complex station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 14,
+        "code": "POI014",
+        "name": "\uac15\ub0a8\uc5ed",
+        "engName": "Gangnam station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 15,
+        "code": "POI015",
+        "name": "\uac74\ub300\uc785\uad6c\uc5ed",
+        "engName": "Konkuk University station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 16,
+        "code": "POI016",
+        "name": "\uace0\ub355\uc5ed",
+        "engName": "Godeok station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 17,
+        "code": "POI017",
+        "name": "\uace0\uc18d\ud130\ubbf8\ub110\uc5ed",
+        "engName": "Express Bus Terminal station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 18,
+        "code": "POI018",
+        "name": "\uad50\ub300\uc5ed",
+        "engName": "Seoul National University of Education station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 19,
+        "code": "POI019",
+        "name": "\uad6c\ub85c\ub514\uc9c0\ud138\ub2e8\uc9c0\uc5ed",
+        "engName": "Guro Digital Complex station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 20,
+        "code": "POI020",
+        "name": "\uad6c\ub85c\uc5ed",
+        "engName": "Guro station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 21,
+        "code": "POI021",
+        "name": "\uad70\uc790\uc5ed",
+        "engName": "Gunja station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 22,
+        "code": "POI023",
+        "name": "\ub300\ub9bc\uc5ed",
+        "engName": "Daerim station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 23,
+        "code": "POI024",
+        "name": "\ub3d9\ub300\ubb38\uc5ed",
+        "engName": "Dongdaemun station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 24,
+        "code": "POI025",
+        "name": "\ub69d\uc12c\uc5ed",
+        "engName": "Ttukseom station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 25,
+        "code": "POI026",
+        "name": "\ubbf8\uc544\uc0ac\uac70\ub9ac\uc5ed",
+        "engName": "Miasageori station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 26,
+        "code": "POI027",
+        "name": "\ubc1c\uc0b0\uc5ed",
+        "engName": "Balsan station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 27,
+        "code": "POI029",
+        "name": "\uc0ac\ub2f9\uc5ed",
+        "engName": "Sadang station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 28,
+        "code": "POI030",
+        "name": "\uc0bc\uac01\uc9c0\uc5ed",
+        "engName": "Samgakji station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 29,
+        "code": "POI031",
+        "name": "\uc11c\uc6b8\ub300\uc785\uad6c\uc5ed",
+        "engName": "Seoul National University station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 30,
+        "code": "POI032",
+        "name": "\uc11c\uc6b8\uc2dd\ubb3c\uc6d0\u00b7\ub9c8\uace1\ub098\ub8e8\uc5ed",
+        "engName": "Seoul Botanic Park\u00b7Magongnaru station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 31,
+        "code": "POI033",
+        "name": "\uc11c\uc6b8\uc5ed",
+        "engName": "Seoul station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 32,
+        "code": "POI034",
+        "name": "\uc120\ub989\uc5ed",
+        "engName": "Seolleung station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 33,
+        "code": "POI035",
+        "name": "\uc131\uc2e0\uc5ec\ub300\uc785\uad6c\uc5ed",
+        "engName": "Sungshin Women's University station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 34,
+        "code": "POI036",
+        "name": "\uc218\uc720\uc5ed",
+        "engName": "Suyu station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 35,
+        "code": "POI037",
+        "name": "\uc2e0\ub17c\ud604\uc5ed\u00b7\ub17c\ud604\uc5ed",
+        "engName": "Sinnonhyeon\u00b7Nonhyeon station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 36,
+        "code": "POI038",
+        "name": "\uc2e0\ub3c4\ub9bc\uc5ed",
+        "engName": "Sindorim station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 37,
+        "code": "POI039",
+        "name": "\uc2e0\ub9bc\uc5ed",
+        "engName": "Sillim station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 38,
+        "code": "POI040",
+        "name": "\uc2e0\ucd0c\u00b7\uc774\ub300\uc5ed",
+        "engName": "Sinchon\u00b7Ewha Womans University station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 39,
+        "code": "POI041",
+        "name": "\uc591\uc7ac\uc5ed",
+        "engName": "Yangjae station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 40,
+        "code": "POI042",
+        "name": "\uc5ed\uc0bc\uc5ed",
+        "engName": "Yeoksam station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 41,
+        "code": "POI043",
+        "name": "\uc5f0\uc2e0\ub0b4\uc5ed",
+        "engName": "Yeonsinnae station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 42,
+        "code": "POI044",
+        "name": "\uc624\ubaa9\uad50\uc5ed\u00b7\ubaa9\ub3d9\uc6b4\ub3d9\uc7a5",
+        "engName": "Omokgyo\u00b7Mok-dong Stadium station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 43,
+        "code": "POI045",
+        "name": "\uc655\uc2ed\ub9ac\uc5ed",
+        "engName": "Wangsimni station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 44,
+        "code": "POI046",
+        "name": "\uc6a9\uc0b0\uc5ed",
+        "engName": "Yongsan station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 45,
+        "code": "POI047",
+        "name": "\uc774\ud0dc\uc6d0\uc5ed",
+        "engName": "Itaewon station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 46,
+        "code": "POI048",
+        "name": "\uc7a5\uc9c0\uc5ed",
+        "engName": "Jangji station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 47,
+        "code": "POI049",
+        "name": "\uc7a5\ud55c\ud3c9\uc5ed",
+        "engName": "Janghanpyeong station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 48,
+        "code": "POI050",
+        "name": "\ucc9c\ud638\uc5ed",
+        "engName": "Cheonho station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 49,
+        "code": "POI051",
+        "name": "\ucd1d\uc2e0\ub300\uc785\uad6c(\uc774\uc218)\uc5ed",
+        "engName": "Chongshin University(Isu) station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 50,
+        "code": "POI052",
+        "name": "\ucda9\uc815\ub85c\uc5ed",
+        "engName": "Chungjeongno station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 51,
+        "code": "POI053",
+        "name": "\ud569\uc815\uc5ed",
+        "engName": "Hapjeong station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 52,
+        "code": "POI054",
+        "name": "\ud61c\ud654\uc5ed",
+        "engName": "Hyehwa station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 53,
+        "code": "POI055",
+        "name": "\ud64d\ub300\uc785\uad6c\uc5ed(2\ud638\uc120)",
+        "engName": "Hongik University station(Line 2)"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 54,
+        "code": "POI056",
+        "name": "\ud68c\uae30\uc5ed",
+        "engName": "Hoegi station"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 55,
+        "code": "POI058",
+        "name": "\uac00\ub77d\uc2dc\uc7a5",
+        "engName": "Garak Market"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 56,
+        "code": "POI059",
+        "name": "\uac00\ub85c\uc218\uae38",
+        "engName": "Garosu-gil"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 57,
+        "code": "POI060",
+        "name": "\uad11\uc7a5(\uc804\ud1b5)\uc2dc\uc7a5",
+        "engName": "Gwangjang(Traditional) Market"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 58,
+        "code": "POI061",
+        "name": "\uae40\ud3ec\uacf5\ud56d",
+        "engName": "Gimpo Airport"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 59,
+        "code": "POI063",
+        "name": "\ub178\ub7c9\uc9c4",
+        "engName": "Noryangjin"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 60,
+        "code": "POI064",
+        "name": "\ub355\uc218\uad81\uae38\u00b7\uc815\ub3d9\uae38",
+        "engName": "Deoksugung-gil\u00b7Jeongdong-gil"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 61,
+        "code": "POI066",
+        "name": "\ubd81\ucd0c\ud55c\uc625\ub9c8\uc744",
+        "engName": "Bukchon Hanok Village"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 62,
+        "code": "POI067",
+        "name": "\uc11c\ucd0c",
+        "engName": "Seochon"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 63,
+        "code": "POI068",
+        "name": "\uc131\uc218\uce74\ud398\uac70\ub9ac",
+        "engName": "Seongsu Cafe Street"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 64,
+        "code": "POI070",
+        "name": "\uc30d\ubb38\uc5ed",
+        "engName": "Ssangmun-dong station"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 65,
+        "code": "POI071",
+        "name": "\uc555\uad6c\uc815\ub85c\ub370\uc624\uac70\ub9ac",
+        "engName": "Apgujeong Rodeo Street"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 66,
+        "code": "POI072",
+        "name": "\uc5ec\uc758\ub3c4",
+        "engName": "Yeouido"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 67,
+        "code": "POI073",
+        "name": "\uc5f0\ub0a8\ub3d9",
+        "engName": "Yeonnam-dong"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 68,
+        "code": "POI074",
+        "name": "\uc601\ub4f1\ud3ec \ud0c0\uc784\uc2a4\ud018\uc5b4",
+        "engName": "Yeongdeungpo Time square"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 69,
+        "code": "POI076",
+        "name": "\uc6a9\ub9ac\ub2e8\uae38",
+        "engName": "Yongnidan-gil"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 70,
+        "code": "POI077",
+        "name": "\uc774\ud0dc\uc6d0 \uc564\ud2f1\uac00\uad6c\uac70\ub9ac",
+        "engName": "Itaewon Antiques street"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 71,
+        "code": "POI078",
+        "name": "\uc778\uc0ac\ub3d9",
+        "engName": "Insa-dong"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 72,
+        "code": "POI079",
+        "name": "\ucc3d\ub3d9 \uc2e0\uacbd\uc81c \uc911\uc2ec\uc9c0",
+        "engName": "Changdong New Economic Center"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 73,
+        "code": "POI080",
+        "name": "\uccad\ub2f4\ub3d9 \uba85\ud488\uac70\ub9ac",
+        "engName": "Cheongdam-dong Luxury Fashion street"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 74,
+        "code": "POI081",
+        "name": "\uccad\ub7c9\ub9ac \uc81c\uae30\ub3d9 \uc77c\ub300 \uc804\ud1b5\uc2dc\uc7a5",
+        "engName": "Traditional market in Cheongnyangni Jegi-dong"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 75,
+        "code": "POI082",
+        "name": "\ud574\ubc29\ucd0c\u00b7\uacbd\ub9ac\ub2e8\uae38",
+        "engName": "Haebangchon\u00b7Gyeongnidan-gil"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 76,
+        "code": "POI083",
+        "name": "DDP(\ub3d9\ub300\ubb38\ub514\uc790\uc778\ud50c\ub77c\uc790)",
+        "engName": "DDP(Dongdaemun Design Plaza)"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 77,
+        "code": "POI084",
+        "name": "DMC(\ub514\uc9c0\ud138\ubbf8\ub514\uc5b4\uc2dc\ud2f0)",
+        "engName": "DMC(Digital Media City)"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 78,
+        "code": "POI085",
+        "name": "\uac15\uc11c\ud55c\uac15\uacf5\uc6d0",
+        "engName": "Gangseo Hangang Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 79,
+        "code": "POI086",
+        "name": "\uace0\ucc99\ub3d4",
+        "engName": "Gocheok Dome"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 80,
+        "code": "POI087",
+        "name": "\uad11\ub098\ub8e8\ud55c\uac15\uacf5\uc6d0",
+        "engName": "Gwangnaru Hangang Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 81,
+        "code": "POI088",
+        "name": "\uad11\ud654\ubb38\uad11\uc7a5",
+        "engName": "Gwanghwamun Square"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 82,
+        "code": "POI089",
+        "name": "\uad6d\ub9bd\uc911\uc559\ubc15\ubb3c\uad00\u00b7\uc6a9\uc0b0\uac00\uc871\uacf5\uc6d0",
+        "engName": "The National Museum of Korea\u00b7Yongsan Family Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 83,
+        "code": "POI090",
+        "name": "\ub09c\uc9c0\ud55c\uac15\uacf5\uc6d0",
+        "engName": "Nanji Hangang Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 84,
+        "code": "POI091",
+        "name": "\ub0a8\uc0b0\uacf5\uc6d0",
+        "engName": "Namsan Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 85,
+        "code": "POI092",
+        "name": "\ub178\ub4e4\uc12c",
+        "engName": "Nodeul island"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 86,
+        "code": "POI093",
+        "name": "\ub69d\uc12c\ud55c\uac15\uacf5\uc6d0",
+        "engName": "Ttukseom Hangang Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 87,
+        "code": "POI094",
+        "name": "\ub9dd\uc6d0\ud55c\uac15\uacf5\uc6d0",
+        "engName": "Mangwon Hangang Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 88,
+        "code": "POI095",
+        "name": "\ubc18\ud3ec\ud55c\uac15\uacf5\uc6d0",
+        "engName": "Banpo Hangang Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 89,
+        "code": "POI096",
+        "name": "\ubd81\uc11c\uc6b8\uafc8\uc758\uc232",
+        "engName": "Dream Forest"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 90,
+        "code": "POI098",
+        "name": "\uc11c\ub9ac\ud480\uacf5\uc6d0\u00b7\ubabd\ub9c8\ub974\ub728\uacf5\uc6d0",
+        "engName": "Seoripul Park\u00b7Montmartre Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 91,
+        "code": "POI099",
+        "name": "\uc11c\uc6b8\uad11\uc7a5",
+        "engName": "Seoul Plaza"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 92,
+        "code": "POI100",
+        "name": "\uc11c\uc6b8\ub300\uacf5\uc6d0",
+        "engName": "Seoul Grand Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 93,
+        "code": "POI101",
+        "name": "\uc11c\uc6b8\uc232\uacf5\uc6d0",
+        "engName": "Seoul Forest"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 94,
+        "code": "POI102",
+        "name": "\uc544\ucc28\uc0b0",
+        "engName": "Achasan"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 95,
+        "code": "POI103",
+        "name": "\uc591\ud654\ud55c\uac15\uacf5\uc6d0",
+        "engName": "Yanghwa Hangang Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 96,
+        "code": "POI104",
+        "name": "\uc5b4\ub9b0\uc774\ub300\uacf5\uc6d0",
+        "engName": "Children's Grand Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 97,
+        "code": "POI105",
+        "name": "\uc5ec\uc758\ub3c4\ud55c\uac15\uacf5\uc6d0",
+        "engName": "Yeouido Hangang Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 98,
+        "code": "POI106",
+        "name": "\uc6d4\ub4dc\ucef5\uacf5\uc6d0",
+        "engName": "World Cup Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 99,
+        "code": "POI107",
+        "name": "\uc751\ubd09\uc0b0",
+        "engName": "Eungbongsan"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 100,
+        "code": "POI108",
+        "name": "\uc774\ucd0c\ud55c\uac15\uacf5\uc6d0",
+        "engName": "Ichon Hangang Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 101,
+        "code": "POI109",
+        "name": "\uc7a0\uc2e4\uc885\ud569\uc6b4\ub3d9\uc7a5",
+        "engName": "Jamsil (Seoul) Sports Complex"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 102,
+        "code": "POI110",
+        "name": "\uc7a0\uc2e4\ud55c\uac15\uacf5\uc6d0",
+        "engName": "Jamsil Hangang Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 103,
+        "code": "POI111",
+        "name": "\uc7a0\uc6d0\ud55c\uac15\uacf5\uc6d0",
+        "engName": "Jamwon Hangang Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 104,
+        "code": "POI112",
+        "name": "\uccad\uacc4\uc0b0",
+        "engName": "Cheonggyesan"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 105,
+        "code": "POI113",
+        "name": "\uccad\uc640\ub300",
+        "engName": "Cheongwadae"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 106,
+        "code": "POI114",
+        "name": "\ubd81\ucc3d\ub3d9 \uba39\uc790\uace8\ubaa9",
+        "engName": "Bukchang-dong food alley"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 107,
+        "code": "POI115",
+        "name": "\ub0a8\ub300\ubb38\uc2dc\uc7a5",
+        "engName": "Namdaemun Market"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 108,
+        "code": "POI116",
+        "name": "\uc775\uc120\ub3d9",
+        "engName": "Ikseon-dong"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 109,
+        "code": "POI117",
+        "name": "\uc2e0\uc815\ub124\uac70\ub9ac\uc5ed",
+        "engName": "Shinjeongnegeori Station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 110,
+        "code": "POI118",
+        "name": "\uc7a0\uc2e4\uc0c8\ub0b4\uc5ed",
+        "engName": "Jamsil Saenae Station"
+    },
+    {
+        "category": "\uc778\uad6c\ubc00\uc9d1\uc9c0\uc5ed",
+        "no": 111,
+        "code": "POI119",
+        "name": "\uc7a0\uc2e4\uc5ed",
+        "engName": "Jamsil Station"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 112,
+        "code": "POI120",
+        "name": "\uc7a0\uc2e4\ub86f\ub370\ud0c0\uc6cc \uc77c\ub300",
+        "engName": "Jamsil Lotte Tower area"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 113,
+        "code": "POI121",
+        "name": "\uc1a1\ub9ac\ub2e8\uae38\u00b7\ud638\uc218\ub2e8\uae38",
+        "engName": "Songridan-gil\u00b7Hosudan-gil"
+    },
+    {
+        "category": "\ubc1c\ub2ec\uc0c1\uad8c",
+        "no": 114,
+        "code": "POI122",
+        "name": "\uc2e0\ucd0c \uc2a4\ud0c0\uad11\uc7a5",
+        "engName": "Shinchon Star Plaza"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 115,
+        "code": "POI123",
+        "name": "\ubcf4\ub77c\ub9e4\uacf5\uc6d0",
+        "engName": "Boramae Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 116,
+        "code": "POI124",
+        "name": "\uc11c\ub300\ubb38\ub3c5\ub9bd\uacf5\uc6d0",
+        "engName": "Seodaemun Independence Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 117,
+        "code": "POI125",
+        "name": "\uc548\uc591\ucc9c",
+        "engName": "Anyangcheon River"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 118,
+        "code": "POI126",
+        "name": "\uc5ec\uc758\uc11c\ub85c",
+        "engName": "Yeouiseoro"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 119,
+        "code": "POI127",
+        "name": "\uc62c\ub9bc\ud53d\uacf5\uc6d0",
+        "engName": "Olympic Park"
+    },
+    {
+        "category": "\uacf5\uc6d0",
+        "no": 120,
+        "code": "POI128",
+        "name": "\ud64d\uc81c\ud3ed\ud3ec",
+        "engName": "Hongje Waterfall"
+    }
+]
