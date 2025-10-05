@@ -28,7 +28,9 @@
     #progressLog{max-height:150px;overflow:auto}
   </style>
 
-  <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=i0l4aehusw&submodules=visualization&callback=initApp"></script>
+  <script id="naver-maps" defer
+  src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=i0l4aehusw&submodules=visualization">
+  </script>
 </head>
 <body>
   <header class="glass border-b border-slate-800/70 sticky top-0 z-40">
@@ -162,7 +164,7 @@ const $ = (sel)=>document.querySelector(sel);
 const $$ = (sel)=>Array.from(document.querySelectorAll(sel));
 const apiBase = 'https://api.koreaaimap.com';
 const GEO_CACHE_KEY = 'koreaaimap:v1:geo-cache';
-const PLACES_URL = './places.json';
+const PLACES_URL = '/places.json';
 const state = {
   map:null,
   heat:null,
@@ -272,14 +274,14 @@ function renderCategoryFilter(){
   });
 }
 async function fetchCityData(code){
-  const url=`${apiBase}/reco/v1/citydata?code=${encodeURIComponent(code)}`;
+  const url = `${API_BASE}/reco/v1/citydata?${qs({ code: placeCode })}`;
   const started=performance.now();
   const res=await fetch(url,{cache:'no-store'});
   if(!res.ok){
     const text=await res.text();
     throw new Error(`CityData 오류(${res.status}): ${text}`);
   }
-  const json=await res.json();
+  const json = await fetchJSONWithRetry(url, { tries: 2, delay: 400 });
   state.lastLatency = performance.now()-started;
   return json;
 }
@@ -306,6 +308,18 @@ function extractLiveStats(categories){
     raw: live
   };
 }
+
+async function geocodeWithOSM(q){
+  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=kr&limit=1&q=${encodeURIComponent(q)}`;
+  const res = await fetch(url, {
+    headers: { 'Accept-Language': 'ko', 'User-Agent': 'koreaaimap-demo/1.0' },
+  });
+  if (!res.ok) throw new Error('OSM geocoding failed');
+  const arr = await res.json();
+  if (!arr?.length) throw new Error('OSM no result');
+  return { lat: parseFloat(arr[0].lat), lng: parseFloat(arr[0].lon), provider: 'OSM Nominatim' };
+}
+
 async function geocodeWithNaver(query){
   return await new Promise((resolve,reject)=>{
     naver.maps.Service.geocode({ query }, (status,response)=>{
@@ -320,15 +334,21 @@ async function geocodeWithNaver(query){
 }
 
 async function ensureCoordinate(place){
-  if(!state.geoCache) state.geoCache=loadGeoCache();
-  const cached=state.geoCache[place.code];
-  if(cached) return cached;
-  const query=`${place.name} 서울`;
-  const coord=await geocodeWithNaver(query);
-  state.geoCache[place.code]=coord;
-  saveGeoCache();
-  return coord;
+  const cached = loadGeoCache(place.name);
+  if (cached) return cached;
+
+  try {
+    const a = await geocodeWithNaver(place.name);
+    saveGeoCache(place.name, a);
+    return a;
+  } catch (_) {
+    // 폴백 시도
+    const b = await geocodeWithOSM(place.name);
+    saveGeoCache(place.name, b);
+    return b;
+  }
 }
+  
 function renderSummary(){
   const active=state.dataset.filter(d=>!d.error && state.filters.has(d.place.category));
   $('#summaryPlaceCount').textContent=`${active.length}/${state.places.length}`;
@@ -374,15 +394,16 @@ function computeHeatData(){
   const maxIdx=Math.max(...active.map(d=>d.live.index||0),0);
   return active.map(item=>{
     let weight=0.4;
-    if(item.live.population && maxPop>0){
-      weight=Math.max(0.25, Math.min(1.4, (item.live.population/maxPop)*1.15));
-    }else if(item.live.index && maxIdx>0){
-      weight=Math.max(0.25, Math.min(1.15, item.live.index/maxIdx));
+    if (item.live.population && maxPop > 0) {
+      weight = (item.live.population / maxPop) * 1.0; // 정규화
+    } else if (item.live.index && maxIdx > 0) {
+      weight = (item.live.index / maxIdx) * 1.0;
     }
-    if(item.live.level){
-      if(/붐빔|혼잡|crowd/i.test(item.live.level)) weight+=0.1;
-      if(/원활|여유|smooth/i.test(item.live.level)) weight-=0.05;
+    if (item.live.level) {
+      if (/붐빔|혼잡|crowd/i.test(item.live.level)) weight += 0.08;
+      if (/여유|원활|free|smooth/i.test(item.live.level)) weight -= 0.05;
     }
+    weight = Math.max(0.1, Math.min(1.0, weight));
     return {
       location:new naver.maps.LatLng(item.coord.lat,item.coord.lng),
       weight,
@@ -398,7 +419,7 @@ function updateHeatmap(){
     state.heat=new naver.maps.visualization.HeatMap({
       map: state.map,
       data,
-      radius:45,
+      radius:30,
       opacity:0.75,
       gradient:{
         0.2:'rgba(59,130,246,0.25)',
@@ -635,10 +656,27 @@ async function planRoute(event){
     showRouteMessage(`❌ ${err.message || err}`,'error');
   }
 }
+
+  async function fetchJSONWithRetry(url, { tries = 2, delay = 400 } = {}){
+  let lastErr;
+  for (let i = 0; i <= tries; i++){
+    try{
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return await res.json();
+    }catch(err){
+      lastErr = err;
+      if (i === tries) break;
+      await new Promise(r => setTimeout(r, delay * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+  
 async function loadPopulationDataset(){
   const results=[];
   let cursor=0;
-  const concurrency=6;
+  const concurrency=4;
   const workers=Array.from({length:concurrency},()=> (async function worker(){
     while(true){
       const index=cursor++;
@@ -758,5 +796,25 @@ async function initApp(){
   }
 }
 </script>
+<script>
+  // 네이버 스크립트 로드 완료되면 initApp 실행 (시각화 서브모듈까지 확인 후)
+  const bootNaver = () => {
+    let tries = 0;
+    const tick = () => {
+      if (window.naver?.maps?.visualization?.HeatMap) return initApp();
+      if (++tries > 80) { // 최대 ~4초
+        console.error('NAVER visualization not ready');
+        return showError?.('네이버 지도 스크립트 로드 지연');
+      }
+      setTimeout(tick, 50);
+    };
+    tick();
+  };
+  window.addEventListener('DOMContentLoaded', () => {
+    const s = document.getElementById('naver-maps');
+    if (s?.complete) bootNaver(); else s?.addEventListener('load', bootNaver);
+  });
+</script>
+
 </body>
 </html>
