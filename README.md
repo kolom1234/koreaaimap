@@ -9,7 +9,7 @@
 
 # 활용 데이터
 ## 서울 실시간 도시 데이터
-<img width="1276" height="1104" alt="image" src="https://github.com/user-attachments/assets/24fdda21-f9dd-4641-ab16-2e8851d3fdf1" />
+<img width="2559" height="1345" alt="image" src="https://github.com/user-attachments/assets/b6958b03-5271-4aa0-a75e-98c8976bfc2d" />
 
 
 # RECO(FastAPI) 골격
