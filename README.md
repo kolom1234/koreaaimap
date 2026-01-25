@@ -1,4 +1,4 @@
-# koreaaimap - 창의학기제 성과물 소개 페이지
+# KoreaAIMap — 서울시 실시간 여행 경로 추천
 세종대학교 2025-2 창의학기제 프로젝트. 서울시 도시 데이터 기반 사용자 맞춤형 AI 장소 추천 서비스 www.koreaaimap.com
 
 
@@ -8,827 +8,227 @@
 
 이에 따라 본 프로젝트에서는 서울시의 다양한 도시 데이터를 융합하여 사용자 개개인의 목적과 취향을 정확히 반영한 맞춤형 장소 및 경로 추천 서비스를 개발하고 사람들의 이동 스트레스 문제를 해결하고자 합니다.
 
-# 활용 데이터
-## 서울 실시간 도시 데이터
-<img width="2559" height="1345" alt="image" src="https://github.com/user-attachments/assets/b6958b03-5271-4aa0-a75e-98c8976bfc2d" />
+<img width="1280" height="668" alt="image" src="https://github.com/user-attachments/assets/ec266e60-50e8-4789-ae97-0a70616086a0" />
 
-
-# RECO(FastAPI) 골격
-
-
-## 0) 핵심 사양(요약)
-
-* **런타임/포트**: FastAPI + Gunicorn(UvicornWorker), **:9000**
-* **엔드포인트(핵심)**:
-`GET /reco/health` — 헬스
-`GET /reco/v1/citydata?code=POIxxx | place=장소명` — 표준화 citydata (내부 게이트웨이 우선, 실패 시 외부 폴백)
-`POST /reco/v1/recommend` — 추천 점수(거리/혼잡도 등)
-* **헬스체크**: `GET /reco/health` → **200 OK**
-  (ECS 컨테이너 헬스 커맨드: `curl -f http://localhost:9000/reco/health || exit 1`)
-* **ALB 규칙**: HTTPS(443) 우선순위 상위에 **`/reco/* → tg-reco(9000)`** + 정확일치 `/reco`도 규칙 추가 권장
-* **서브넷/보안**: ECS(Fargate) 프라이빗 서브넷, Public IP Off, `alb-sg → ecs-reco-sg(9000)`만 허용
-* **캐시·레이트리밋**: 내부/외부 API 프록시 호출 TTL **60s**, 외부 직접호출 백업 경로에 rate limit **700ms** 간격 권장
-* **내부 게이트웨이 우선**: `https://api.koreaaimap.com/api/v1/citydata?code=...` 우선 호출(키 보호), 실패 시 OpenAPI 백업
+* **서비스:** [https://www.koreaaimap.com/](https://www.koreaaimap.com/)
+* **한 줄 소개:** 서울시 실시간 도시데이터·교통·문화행사 정보를 통합해 **장소 탐색 + 혼잡도 시각화 + 대중교통/차량 경로 추천**을 제공하는 실시간 여행/이동 경로 추천 시스템입니다.
 
 ---
 
-## 1) 디렉터리 구조
+## Overview
 
-```
-reco/
-  app/
-    __init__.py
-    main.py
-    api/
-      __init__.py
-      routes.py               # /reco/* 라우팅
-    core/
-      __init__.py
-      config.py               # ENV 로드·설정
-    models/
-      __init__.py
-      schemas.py              # Pydantic 스키마
-    services/
-      __init__.py
-      cache.py                # Redis/인메모리 캐시
-      seoul_client.py         # 내부 API/외부 OpenAPI 클라이언트
-      recommend.py            # 추천 스코어링(거리/혼잡도 등)
-  requirements.txt
-  gunicorn_conf.py
-  Dockerfile
-  README.md (본 문서)
-
-```
+KoreaAIMap은 서울시의 다양한 공공 데이터와 지도/경로 API를 결합해, 사용자가 원하는 목적지와 이동 경로를 **실시간 상황(혼잡도, 교통 속도, 문화행사 등)** 기반으로 탐색하고 추천받을 수 있도록 설계되었습니다.
+지도에서 가장 먼저 확인할 수 있는 핵심 정보는 **혼잡도 마커**와 **혼잡도 히트맵(주요 120개 장소)** 입니다.
 
 ---
 
-## 2) 환경변수(운영 기본값)
+## Tech Stack
 
-| ENV                 |    필수 | 예시                           | 설명                     |
-| ------------------- | ----: | ---------------------------- | ---------------------- |
-| `API_BASE_URL`      |       | `https://api.koreaaimap.com` | 내부 Spring 게이트웨이 루트     |
-| `SEOUL_GENERAL_KEY` | (백업용) | `…`                          | 외부 OpenAPI 직접 호출시만 사용  |
-| `REDIS_URL`         |       | `rediss://:pw@host:6379/0`   | 없으면 인메모리 캐시 fallback   |
-| `CACHE_TTL_SECONDS` |       | `60`                         | citydata 캐시 TTL        |
-| `RATE_LIMIT_MS`     |       | `700`                        | 외부(직접)호출 간 최소 간격       |
-| `LOG_LEVEL`         |       | `info`                       | uvicorn/gunicorn 로그 레벨 |
+### Frontend
 
----
+* **Framework:** React 19.1.1 + Vite (Rolldown)
+* **Map:** Naver Maps API v3
+* **Scale:** 2,500+ LOC (App.jsx, ui.css 포함)
+* **Components:** 10+ 재사용 컴포넌트
+* **Hooks:** 30+ (useState, useMemo, useCallback, useEffect 등)
 
-## 3) FastAPI 코드 (운영형 최소구성)
+### Backend
 
-#### `app/core/config.py`
-
-```python
-from pydantic import BaseModel
-import os
-
-class Settings(BaseModel):
-    api_base_url: str = os.getenv("API_BASE_URL", "https://api.koreaaimap.com").rstrip("/")
-    seoul_key: str | None = os.getenv("SEOUL_GENERAL_KEY")
-    redis_url: str | None = os.getenv("REDIS_URL")
-    cache_ttl: int = int(os.getenv("CACHE_TTL_SECONDS", "60"))
-    rate_limit_ms: int = int(os.getenv("RATE_LIMIT_MS", "700"))
-    service_name: str = "koreaaimap-reco"
-    version: str = "0.1.0"
-    log_level: str = os.getenv("LOG_LEVEL", "info")
-
-settings = Settings()
-```
-
-#### `app/models/schemas.py`
-
-```python
-from typing import List, Optional, Literal, Dict, Any
-from pydantic import BaseModel, Field
-
-class Place(BaseModel):
-    code: str = Field(..., description="서울시 장소 코드(예: POI104)")
-    name: Optional[str] = None
-    lat: Optional[float] = None
-    lng: Optional[float] = None
-
-class RecommendRequest(BaseModel):
-    user_lat: float
-    user_lng: float
-    purpose: Literal["date","leisure","study","walk","shopping","family","any"] = "any"
-    max_results: int = 5
-    candidates: Optional[List[Place]] = None
-
-class RecommendItem(BaseModel):
-    place: Place
-    score: float
-    features: Dict[str, Any]
-
-class RecommendResponse(BaseModel):
-    count: int
-    items: List[RecommendItem]
-    source: str = "Seoul Open Data via internal API"
-```
-
-#### `app/services/cache.py`
-
-```python
-import time, json, threading
-from typing import Optional
-
-try:
-    import redis
-except ImportError:
-    redis = None
-
-class Cache:
-    def __init__(self, url: Optional[str], default_ttl: int = 60):
-        self.default_ttl = default_ttl
-        if url and redis:
-            self.client = redis.Redis.from_url(url, decode_responses=True, socket_timeout=2)
-            self.local = None
-        else:
-            self.client = None
-            self.local = {}
-            self.lock = threading.Lock()
-
-    def get(self, key: str):
-        if self.client:
-            raw = self.client.get(key)
-            return json.loads(raw) if raw else None
-        with self.lock:
-            v = self.local.get(key)
-            if not v: return None
-            if v["exp"] < time.time(): self.local.pop(key, None); return None
-            return v["val"]
-
-    def set(self, key: str, value, ttl: Optional[int] = None):
-        ttl = ttl or self.default_ttl
-        if self.client:
-            self.client.setex(key, ttl, json.dumps(value, ensure_ascii=False))
-        else:
-            with self.lock:
-                self.local[key] = {"val": value, "exp": time.time()+ttl}
-```
-
-#### `app/services/seoul_client.py`
-
-```python
-import httpx, time
-from ..core.config import settings
-
-class SeoulClient:
-    def __init__(self):
-        self._last = 0.0
-        self.rate_ms = settings.rate_limit_ms
-        self.http = httpx.Client(timeout=8, headers={"User-Agent":"koreaaimap-reco/0.1"})
-
-    def _rl(self):
-        now = time.time()
-        wait = (self._last + self.rate_ms/1000.0) - now
-        if wait > 0: time.sleep(wait)
-        self._last = time.time()
-
-    def citydata_via_internal(self, *, code: str | None = None, place: str | None = None):
-        assert (code or place) and not (code and place)
-        params = {"code": code} if code else {"place": place}
-        url = f"{settings.api_base_url}/api/v1/citydata"
-        self._rl()
-        r = self.http.get(url, params=params)
-        r.raise_for_status()
-        return r.json()
-
-    def citydata_direct(self, *, code: str):
-        if not settings.seoul_key:
-            raise RuntimeError("SEOUL_GENERAL_KEY is not set.")
-        url = f"http://openapi.seoul.go.kr:8088/{settings.seoul_key}/json/citydata/1/5/{code}"
-        self._rl()
-        r = self.http.get(url)
-        r.raise_for_status()
-        return r.json()
-```
-
-#### `app/services/recommend.py`
-
-```python
-from math import radians, sin, cos, asin, sqrt
-from ..models.schemas import Place, RecommendItem
-
-def _haversine(lat1, lon1, lat2, lon2):
-    R=6371.0
-    dlat=radians(lat2-lat1); dlon=radians(lon2-lon1)
-    a=sin(dlat/2)**2 + cos(radians(lat1))*cos(radians(lat2))*sin(dlon/2)**2
-    return 2*R*asin(sqrt(a))
-
-def score_place(*, user_lat, user_lng, place: Place, citydata: dict, purpose: str) -> RecommendItem:
-    # 혼잡도(여유/보통/약간 붐빔/붐빔) → 0.1/0.4/0.7/1.0
-    level_map = {"여유":0.1, "보통":0.4, "약간 붐빔":0.7, "붐빔":1.0}
-    categories = citydata.get("categories") or citydata.get("CITYDATA") or {}
-    ppl = categories.get("population") or {}
-    crowd_level = ppl.get("congestionLevel") or ppl.get("LEVEL")
-    crowd = level_map.get(str(crowd_level), 0.5)
-
-    dist_km = None
-    if place.lat and place.lng:
-        dist_km = _haversine(user_lat, user_lng, place.lat, place.lng)
-    dist_term = 0.0 if dist_km is None else max(0.0, 1.0 - min((dist_km/10.0), 1.0))
-
-    purpose_bias = 0.0  # TODO: 날씨/실내·실외/시간대 신호 반영
-    score = 0.60*dist_term + 0.35*(1.0 - crowd) + 0.05*purpose_bias
-    feats = {"dist_km": dist_km, "crowd_raw": crowd_level, "crowd_norm": crowd, "dist_term": dist_term}
-    return RecommendItem(place=place, score=round(score,4), features=feats)
-```
-
-#### `app/api/routes.py`
-
-```python
-from fastapi import APIRouter, HTTPException, Query
-from ..core.config import settings
-from ..services.seoul_client import SeoulClient
-from ..services.cache import Cache
-from ..models.schemas import RecommendRequest, RecommendResponse, RecommendItem, Place
-from ..services.recommend import score_place
-
-router = APIRouter()
-client = SeoulClient()
-cache = Cache(settings.redis_url, default_ttl=settings.cache_ttl)
-
-@router.get("/health")
-def health():
-    return {"status":"ok","service":settings.service_name,"version":settings.version}
-
-@router.get("/v1/ping")
-def ping():
-    return {"pong": True}
-
-@router.get("/v1/citydata")
-def citydata(code: str | None = Query(None), place: str | None = Query(None)):
-    if not ((code or place) and not (code and place)):
-        raise HTTPException(400, "Provide exactly one of code or place")
-    key = f"citydata:{code or place}"
-    cached = cache.get(key)
-    if cached: return cached
-    try:
-        data = client.citydata_via_internal(code=code, place=place)
-    except Exception:
-        if code:
-            data = client.citydata_direct(code=code)  # fallback
-        else:
-            raise
-    cache.set(key, data)
-    return data
-
-@router.post("/v1/recommend", response_model=RecommendResponse)
-def recommend(payload: RecommendRequest):
-    candidates = payload.candidates or [Place(code="POI104", name="어린이대공원")]
-    items: list[RecommendItem] = []
-    for p in candidates:
-        try:
-            cd = citydata(code=p.code)  # 로컬 핸들러(캐시 포함)
-            items.append(score_place(user_lat=payload.user_lat, user_lng=payload.user_lng,
-                                     place=p, citydata=cd, purpose=payload.purpose))
-        except Exception:
-            continue
-    items.sort(key=lambda x: x.score, reverse=True)
-    items = items[: payload.max_results]
-    return RecommendResponse(count=len(items), items=items)
-```
-
-#### `app/main.py`
-
-```python
-from fastapi import FastAPI
-from .api.routes import router
-
-app = FastAPI(title="KoreaAIMap RECO", version="0.1.0")
-app.include_router(router, prefix="/reco")
-```
+* **Runtime/Framework:** Cloudflare Workers (V8 Isolates)
+* **REST API:** 10+ 엔드포인트
+* **Scalability:** 자동 스케일링(트래픽에 따라 수평 확장)
+* **Deployment:** 330+ 글로벌 엣지 로케이션
+* **Scheduler:** Cron Jobs 기반 자동 갱신 (30분 주기)
+* **ML Inference:** AWS Lambda 기반 모델 호출
 
 ---
 
-# 4) 종속성, 서버, 도커
+## Key Features
 
-#### `requirements.txt`
+### 실시간 지도 시각화 및 탐색
 
-```
-fastapi==0.115.0
-uvicorn[standard]==0.30.5
-httpx==0.27.2
-redis==5.0.8
-```
+* 주요 **120개 장소** 혼잡도 **마커 + 히트맵** 제공
+* **7개 카테고리** 필터링 (관광명소/공원/쇼핑/음식점 등)
+* 통합 검색
 
-#### `gunicorn_conf.py`
+  * 내부 주요 120개 장소 검색
+  * **Naver Places API** 연동 검색
+<img width="926" height="473" alt="image" src="https://github.com/user-attachments/assets/fe6972dd-2e7d-433e-a1ef-45a56e8ad590" />
+<img width="742" height="279" alt="image" src="https://github.com/user-attachments/assets/12e8455c-dcab-4faa-bbc4-47f39310c4c5" />
+<img width="983" height="518" alt="image" src="https://github.com/user-attachments/assets/09430a4b-61a5-4b16-a33b-e7d890ca295d" />
 
-```python
-workers = 2
-worker_class = "uvicorn.workers.UvicornWorker"
-bind = "0.0.0.0:9000"
-timeout = 30
-```
 
-#### `Dockerfile` (슬림·비루트)
+### 교통/이동 경로 추천
 
-```dockerfile
-FROM python:3.11-slim
+* **차량 경로 추천**
 
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
-WORKDIR /app
+  * OSRM 기반 **5개 후보 경로**
+  * Naver Direction5 기반 **3개 후보 경로**
+  * **AI 모델 기반 추천 경로** 및 예측 정보 표시
+* **지하철 최단 경로 탐색**
 
-RUN adduser --disabled-password --gecos "" appuser && \
-    apt-get update && apt-get install -y --no-install-recommends curl && \
-    rm -rf /var/lib/apt/lists/*
+  * 서울 지하철 노선 그래프 기반 **BFS 최단경로**
+  * 환승/거리/시간 산출
+* **버스 경로 추천**
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+  * 서울 전체 노선/정류장 데이터 기반 자체 탐색
+  * **실시간 도착 정보**(도착시간/차량유형/만차/막차) 표시
+<img width="973" height="505" alt="image" src="https://github.com/user-attachments/assets/72856f98-8bed-4662-9868-17ebb1170952" />
+ <img width="1031" height="697" alt="image" src="https://github.com/user-attachments/assets/205d0466-9bb3-4e3d-a300-939aaecdf8b8" />
+<img width="1031" height="697" alt="image" src="https://github.com/user-attachments/assets/1e6cfc4f-8b36-48e1-b0a1-32f919774915" />
+<img width="963" height="609" alt="image" src="https://github.com/user-attachments/assets/e50e1dda-1ae7-4a85-ad39-880c7f035952" />
+<img width="963" height="609" alt="image" src="https://github.com/user-attachments/assets/4e2e396f-b513-4bda-bce0-058911743160" />
 
-COPY app ./app
-COPY gunicorn_conf.py .
 
-USER appuser
-EXPOSE 9000
-CMD ["gunicorn", "-c", "gunicorn_conf.py", "app.main:app"]
-```
+
+### 문화행사·도시 데이터 통합
+
+* **문화행사 1,000+ 장소** 필터링 및 상세 조회
+* 출발지 기준 **반경 1.5km 자동 표시**
+* 이용료 기반 필터링
+* 상권/업종/성별/연령대 기반 **맞춤형 필터링**
+
+  * 예: “유흥 및 스포츠/문화/레저 상권 활발 + 여성 비율 높음 + 20대 비중 20% 이상” 조건에 맞는 장소 조회
+<img width="946" height="422" alt="image" src="https://github.com/user-attachments/assets/5c4e3cd1-68db-48b4-960e-c0fd4e5b6728" />
+---
+
+## Public APIs & External Services
+
+1. **서울시 실시간 도시 데이터 API**
+
+   * 120개 주요 장소 **혼잡도/인구/날씨**
+   * **30분 주기** 자동 갱신
+   * 성별/연령대/상주비율 등 실시간 지표 활용
+
+2. **TOPIS 서울시 교통 정보 API**
+
+   * 도로 링크별 실시간 평균 속도
+   * **6,700,000+ 행** 규모 데이터 수집 및 학습
+   * AI 모델 학습용 데이터셋 구축
+
+3. **서울시 문화행사 정보 API**
+
+   * **1,000+ 문화행사** 장소 정보
+   * 이용료 필터링
+   * 출발지 기준 반경 표시
+
+ 
+
+4. **서울시 지하철역 정보 API**
+
+   * 역 좌표/노선 정보
+   * BFS 기반 최단경로 탐색 구현
+
+5. **서울시 버스 정보 API (공공데이터포털)**
+
+   * 버스 노선 정보 **41,396개**
+   * 버스 정류소 위치 **11,247개**
+   * 실시간 도착 정보(도착시간/차량유형/만차/막차)
+
+6. **OSRM API**
+
+   * 차량 경로 후보 생성(5개)
+
+7. **Naver Maps APIs**
+
+   * Place Search API
+   * Direction5 API
 
 ---
 
-## 5) ECS 태스크/서비스 파라미터(정확값)
+## Data Engineering
 
-* **Task Definition**: `koreaaimap-reco:1`
+### 좌표계 변환 및 정규화
 
-  * OS/Arch: Linux/x86\_64, `awsvpc`
-  * CPU/MEM: **1024 / 2048** (초기권장)
-  * **PortMappings**: containerPort **9000** / protocol TCP
-  * **HealthCheck (Container)**:
+* **TM128 → WGS84** 변환 알고리즘 구현
+* POI 코드 매핑 및 장소명 정규화
+* JSON/XML 등 **다양한 응답 포맷 통합 처리**
+* 에러 핸들링 및 폴백 메커니즘 구축
 
-    ```
-    CMD-SHELL
-    curl -f http://localhost:9000/reco/health || exit 1
-    ```
+### Backend Data Pipeline
 
-    Interval=30s / Timeout=5s / Retries=3 / StartPeriod=45s
-  * **Logs**: awslogs, Group `/ecs/koreaaimap-reco`, StreamPrefix `ecs`, Region `ap-northeast-2`
-  * **Env**(예): `API_BASE_URL=https://api.koreaaimap.com`, `CACHE_TTL_SECONDS=60`, `RATE_LIMIT_MS=700`
-
-* **Service**: `koreaaimap-reco-svc`
-
-  * 서브넷: 프라이빗 2AZ / Public IP: Disabled
-  * SG: `ecs-reco-sg` (인바운드 **9000 from alb-sg**)
-  * Desired Count: 1 (롤링: 100/200)
-  * Health check grace period: 120s
-
-* **ALB Target Group `tg-reco`**
-
-  * Target port: **9000**
-  * **Health check**: path **`/reco/health`**, Matcher 200
-
-* **ALB Listener(443)**
-
-  * 기본: `tg-api`
-  * **규칙 #1**: Path **`/reco/*` → tg-reco**
-  * **규칙 #2(권장)**: Path **정확일치 `/reco` → tg-reco** (루트 접근 404 방지)
+* 120개 주요 장소 실시간 데이터 수집
+* **5종 공공 API 프록시 + 데이터 정규화**
+* 다층 캐싱 로직(응답 안정성/성능 최적화)
+* Cron 기반 데이터 자동 갱신(30분 주기)
 
 ---
 
-## 6) 배포(수동) 스니펫
+## Algorithms
 
-```bash
-# ECR 로그인
-aws ecr get-login-password --region ap-northeast-2 \
-| docker login --username AWS --password-stdin 330492733321.dkr.ecr.ap-northeast-2.amazonaws.com
+> 현재 경로 알고리즘은 “지도 상의 최적 경로”를 우선 제공하도록 단순화되어 있으며, 실제 세계 최적화(신호/교차로/돌발 변수 등)는 향후 고도화 대상입니다.
 
-# 이미지 빌드/푸시
-cd reco
-docker build --platform linux/amd64 -t koreaaimap-reco:latest .
-docker tag koreaaimap-reco:latest 330492733321.dkr.ecr.ap-northeast-2.amazonaws.com/koreaaimap-reco:latest
-docker push 330492733321.dkr.ecr.ap-northeast-2.amazonaws.com/koreaaimap-reco:latest
+### 1) 지하철 최단 경로 탐색 (BFS)
 
-# ECS 강제 롤아웃
-aws ecs update-service \
-  --cluster koreaaimap \
-  --service koreaaimap-reco-svc \
-  --force-new-deployment \
-  --region ap-northeast-2
-```
+* 서울 지하철 전 노선 그래프 모델링
+* BFS 기반 최단 경로 탐색
+* 환승 횟수 최소화 로직
+* 소요 시간/거리 계산
 
----
+### 2) 버스 경로 탐색 (자체 개발)
 
-## 7) CI/CD (GitHub Actions) — `/.github/workflows/deploy-reco.yml`
+* 노선 **41,396개**, 정류소 **11,247개** 기반 탐색
+* 최적 버스 노선 조합 알고리즘
+* 실시간 도착 정보 통합
 
-```yaml
-name: Deploy RECO (FastAPI)
+### 3) AI 기반 경로 랭킹
 
-on:
-  push:
-    paths:
-      - "reco/**"
-      - ".github/workflows/deploy-reco.yml"
-    branches: [ "main" ]
+* OSRM/Naver Direction5로 경로 후보 생성
+* AI 모델이 도로 링크별 평균 속도 예측
+* 예측 속도 기반 총 소요 시간 계산
+* 사용자 선호도 반영:
 
-jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-    env:
-      AWS_REGION: ap-northeast-2
-      ECR_REPO: ${{ secrets.ECR_RECO_REPO }}
-      CLUSTER: koreaaimap
-      SERVICE: koreaaimap-reco-svc
-      IMAGE_TAG: ${{ github.sha }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to ECR
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build & Push image
-        working-directory: ./reco
-        run: |
-          docker build --platform linux/amd64 -t "$ECR_REPO:latest" -t "$ECR_REPO:$IMAGE_TAG" .
-          docker push "$ECR_REPO:latest"
-          docker push "$ECR_REPO:$IMAGE_TAG"
-
-      - name: Update ECS Service
-        run: |
-          aws ecs update-service \
-            --cluster "$CLUSTER" \
-            --service "$SERVICE" \
-            --force-new-deployment \
-            --region "$AWS_REGION"
-```
-
-> 시크릿: `AWS_ROLE_ARN`, `ECR_RECO_REPO`(예: `3304…ecr.ap-northeast-2.amazonaws.com/koreaaimap-reco`)
+  * 빠른 이동 / 연료 절약 / 고속도로 우선 / 여유 이동 / 최단 거리
 
 ---
 
-## 8) OpenAPI(YAML) — RECO 섹션(병합용)
+## What You Can Do on the Site
 
-```yaml
-paths:
-  /reco/health:
-    get:
-      summary: Health of RECO service
-      responses:
-        '200': { description: OK }
+* 혼잡도/히트맵 기반 **주요 120개 장소 실시간 상태** 확인
+* 문화행사·사고통제·상권현황·날씨·대기질·혼잡도·인구 상세 등 **통합 정보 조회**
+* 문화행사(여행지) **검색/상세 조회**
+* 조건 기반 **맞춤형 장소 필터링**
+* 주요 120 장소 외 **기타 장소 검색** 및 주변 기반 **추정 인구 정보 제공**
+* 차량/지하철/버스 **다중 경로 추천** 및 **실시간 정보 시각화**
 
-  /reco/v1/citydata:
-    get:
-      summary: Get normalized citydata (via internal gateway, fallback to direct)
-      parameters:
-        - in: query
-          name: code
-          schema: { type: string }
-        - in: query
-          name: place
-          schema: { type: string }
-      responses:
-        '200': { description: OK }
-
-  /reco/v1/recommend:
-    post:
-      summary: Get recommended places
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RecommendRequest'
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RecommendResponse'
-
-components:
-  schemas:
-    Place:
-      type: object
-      properties:
-        code: { type: string }
-        name: { type: string }
-        lat: { type: number }
-        lng: { type: number }
-      required: [code]
-    RecommendRequest:
-      type: object
-      required: [user_lat, user_lng]
-      properties:
-        user_lat: { type: number }
-        user_lng: { type: number }
-        purpose: { type: string, enum: [date, leisure, study, walk, shopping, family, any], default: any }
-        max_results: { type: integer, default: 5 }
-        candidates:
-          type: array
-          items: { $ref: '#/components/schemas/Place' }
-    RecommendResponse:
-      type: object
-      properties:
-        count: { type: integer }
-        items:
-          type: array
-          items:
-            type: object
-            properties:
-              place: { $ref: '#/components/schemas/Place' }
-              score: { type: number }
-              features: { type: object }
-        source: { type: string }
-```
-
----
-
-## 9) Postman 컬렉션(추가 아이템 최소)
-
-* **RECO — /reco/health (GET)**
-  Tests:
-
-  ```js
-  pm.test("status ok", () => pm.response.to.have.status(200));
-  pm.test("body ok", () => pm.expect(pm.response.json().status).to.eql("ok"));
-  ```
-
-* **RECO — /reco/v1/recommend (POST)**
-  Body(JSON):
-
-  ```json
-  {
-    "user_lat": 37.549,
-    "user_lng": 127.074,
-    "purpose": "date",
-    "max_results": 3,
-    "candidates": [{"code":"POI104","name":"어린이대공원"}]
-  }
-  ```
-
-  Tests:
-
-  ```js
-  pm.test("200 OK", () => pm.response.to.have.status(200));
-  pm.test("has items", () => pm.expect(pm.response.json().count).to.be.greaterThan(0));
-  ```
-
----
-
-## 10) 점검 체크리스트 (런칭 직전)
-
-1. **ECR**: `koreaaimap-reco:latest` 존재
-2. **ECS Task**: 포트 9000, 헬스 커맨드 적용, 로그 그룹 `/ecs/koreaaimap-reco`
-3. **ECS Service**: 프라이빗 2AZ, Public IP Off, `ecs-reco-sg` 인바운드 9000 from `alb-sg`
-4. **ALB**: `tg-reco` 헬스 200, **규칙 `/reco/*` & 정확일치 `/reco`** 적용
-5. **DNS**: `reco.koreaaimap.com → ALB`, 운영 시 Cloudflare Full(Strict) + `alb-sg`를 CF IP로 축소
-6. **Smoke**:
-
-   ```bash
-   curl -I https://api.koreaaimap.com/reco/health
-   curl -s https://api.koreaaimap.com/reco/v1/citydata?code=POI104 | jq '.'
-   curl -s -X POST https://api.koreaaimap.com/reco/v1/recommend \
-     -H 'content-type: application/json' \
-     -d '{"user_lat":37.55,"user_lng":127.07,"candidates":[{"code":"POI104"}]}'
-   ```
-# KoreaAiMap — Logical/Physical ERD (PostgreSQL 16 + PostGIS)
----
 ```mermaid
----
-title: KoreaAiMap — Logical/Physical ERD (PostgreSQL 16 + PostGIS)
----
+graph TD
+  U[User Browser] --> FE[Frontend React Vite Cloudflare Pages]
+  FE --> W[Backend Cloudflare Workers]
 
-erDiagram
-  %% ============================================================
-  %% CORE (기준 정보)
-  %% ============================================================
-  CORE_POI {
-    text        poi_code PK                "장소 코드 (예: POI104)"
-    text        name_ko                    "장소명"
-    text        category                   "대분류 (park/palace/commercial/...)" 
-    text        subcategory                "소분류"
-    geometry    boundary                   "MULTIPOLYGON(4326) — 지도 경계"
-    geography   centroid                   "POINT(4326) — 거리/최근접 검색"
-    numeric     area_m2
-    jsonb       props                      "부가 속성(운영 메타/태그 등)"
-    timestamptz created_at
-    timestamptz updated_at
-  }
+  %% Request path: cache -> KV -> response
+  W --> C[Edge Cache caches default]
+  C --> R[Response max age 1800]
+  C --> K[KV Get CITYDATA KV]
+  K --> R
+  K --> E[404 Not Found]
+  K --> KV[Cloudflare KV CITYDATA KV]
+  W --> P[Async Cache Put waitUntil]
+  P --> C
 
-  DIM_CATEGORY {
-    text        code PK                    "population/commerce/road/transit/parking/ev/bike/weather/events"
-    text        name
-    text        description
-  }
+  %% Scheduled refresh path
+  subgraph CRON[Cron every 30 minutes]
+    S[scheduled event] --> POI[Iterate 120 POIs rate limit]
+    POI --> SF[Fetch Seoul OpenAPI]
+    SF --> PUT[KV Put TTL 3600]
+  end
+  PUT --> KV
 
-  DIM_TIME_5M {
-    timestamptz ts_utc PK
-    timestamptz ts_kst
-    date        ymd
-    int         hour_0_23
-    int         minute_0_59
-    boolean     is_weekend
-  }
+  %% External integrations
+  W --> SEOUL[Seoul CityData API]
+  W --> TOPIS[TOPIS Traffic API]
+  W --> BUS[Public Bus API]
+  W --> CULT[Seoul Culture Event API]
+  W --> SUB[Seoul Subway API]
+  W --> OSRM[OSRM API]
+  W --> NAV[Naver Maps API]
 
-  %% ============================================================
-  %% RAW (원본 수집/보존)
-  %% ============================================================
-  RAW_CITYDATA_INGEST {
-    bigserial   id PK
-    text        src_system                 "seoul-opendata 등"
-    text        poi_code FK
-    text        category                   "DIM_CATEGORY.code"
-    timestamptz observed_at                "관측시각(UTC)"
-    jsonb       payload                    "원본 JSON"
-    bytea       payload_hash               "sha256(raw.payload)"
-    timestamptz received_at                "수집시각"
-  }
-
-  %% ============================================================
-  %% FACT (정규화 스냅샷) — 공통 규칙: PK (poi_code, observed_at)
-  %% 파티셔닝(일 단위) 전제. extras는 원문 보존/스키마 유연성용.
-  %% ============================================================
-
-  FACT_CITYDATA_POP {
-    text        poi_code PK, FK
-    timestamptz observed_at PK
-    int         population_cnt
-    text        congestion                  "ENUM: 여유/보통/약간 붐빔/붐빔/미상"
-    numeric     male_pct                    "0~100"
-    numeric     female_pct                  "0~100"
-    numeric     age_10s_pct                 "0~100"
-    numeric     age_20s_pct                 "0~100"
-    numeric     age_30s_pct                 "0~100"
-    numeric     age_40s_pct                 "0~100"
-    numeric     age_50s_pct                 "0~100"
-    numeric     age_60p_pct                 "0~100"
-    text        density_lvl                 "면적대비 밀집 단계"
-    jsonb       extras
-  }
-
-  FACT_CITYDATA_COMMERCE {
-    text        poi_code PK, FK
-    timestamptz observed_at PK
-    bigint      total_amount
-    bigint      total_txn
-    text        bucket                      "quiet/normal/busy/peak"
-    jsonb       sectors                     "업종별 금액/건수 {sector:{amount,txn}}"
-    jsonb       extras
-  }
-
-  FACT_CITYDATA_ROAD {
-    text        poi_code PK, FK
-    timestamptz observed_at PK
-    numeric     avg_speed_kmh
-    int         congestion_index
-    int         incidents_cnt
-    jsonb       incidents                    "옵션: 상세 목록"
-    jsonb       extras
-  }
-
-  FACT_CITYDATA_TRANSIT {
-    text        poi_code PK, FK
-    timestamptz observed_at PK
-    int         bus_arrivals_cnt
-    int         subway_arrivals_cnt
-    int         onboard_cnt
-    int         offboard_cnt
-    jsonb       extras
-  }
-
-  FACT_CITYDATA_PARKING {
-    text        poi_code PK, FK
-    timestamptz observed_at PK
-    int         lots_total
-    int         lots_available
-    numeric     utilization_pct
-    jsonb       extras
-  }
-
-  FACT_CITYDATA_EV {
-    text        poi_code PK, FK
-    timestamptz observed_at PK
-    int         chargers_total
-    int         chargers_available
-    jsonb       type_breakdown               "급속/완속 등 구성"
-    jsonb       extras
-  }
-
-  FACT_CITYDATA_BIKE {
-    text        poi_code PK, FK
-    timestamptz observed_at PK
-    int         docks_total
-    int         bikes_available
-    numeric     rack_utilization_pct
-    jsonb       extras
-  }
-
-  FACT_CITYDATA_WEATHER {
-    text        poi_code PK, FK
-    timestamptz observed_at PK
-    numeric     temp_c
-    numeric     humidity_pct
-    numeric     wind_ms
-    numeric     rainfall_mm
-    numeric     pm10
-    numeric     pm25
-    numeric     uv_index
-    text        alert_level
-    jsonb       extras
-  }
-
-  FACT_EVENTS_DAILY {
-    text        poi_code FK
-    text        event_id PK
-    text        title
-    date        start_date
-    date        end_date
-    text        venue
-    text        url
-    text        category
-    timestamptz last_seen_at
-    jsonb       extras
-  }
-
-  %% ============================================================
-  %% MART (서빙/머티리얼라이즈드 뷰)
-  %% ============================================================
-  MART_MV_POP_LATEST {
-    text        poi_code PK                 "poi당 최신 1행 보장"
-    timestamptz observed_at
-    int         population_cnt
-    text        congestion
-    jsonb       extras
-  }
-
-  MART_MV_COMM_LATEST {
-    text        poi_code PK
-    timestamptz observed_at
-    bigint      total_amount
-    bigint      total_txn
-    text        bucket
-    jsonb       sectors
-  }
-
-  MART_MV_ROAD_LATEST {
-    text        poi_code PK
-    timestamptz observed_at
-    numeric     avg_speed_kmh
-    int         congestion_index
-    int         incidents_cnt
-  }
-
-  MART_MV_TREND_12H_POP {
-    text        poi_code PK
-    timestamptz from_ts PK
-    timestamptz to_ts
-    int         samples
-    numeric     avg_population
-    numeric     max_population
-    numeric     min_population
-  }
-
-  %% ============================================================
-  %% ML (예측 결과)
-  %% ============================================================
-  ML_POPULATION_FORECAST_5M {
-    text        poi_code PK, FK
-    timestamptz target_ts  PK
-    text        model_ver  PK
-    bigint      pred_total
-    numeric     mae
-    timestamptz created_at
-  }
-
-  %% ============================================================
-  %% RELATIONSHIPS
-  %% ============================================================
-  CORE_POI ||--o{ RAW_CITYDATA_INGEST        : "has raw"
-  DIM_CATEGORY ||--o{ RAW_CITYDATA_INGEST    : "classifies"
-
-  CORE_POI ||--o{ FACT_CITYDATA_POP          : "has"
-  CORE_POI ||--o{ FACT_CITYDATA_COMMERCE     : "has"
-  CORE_POI ||--o{ FACT_CITYDATA_ROAD         : "has"
-  CORE_POI ||--o{ FACT_CITYDATA_TRANSIT      : "has"
-  CORE_POI ||--o{ FACT_CITYDATA_PARKING      : "has"
-  CORE_POI ||--o{ FACT_CITYDATA_EV           : "has"
-  CORE_POI ||--o{ FACT_CITYDATA_BIKE         : "has"
-  CORE_POI ||--o{ FACT_CITYDATA_WEATHER      : "has"
-  CORE_POI ||--o{ FACT_EVENTS_DAILY          : "hosts"
-
-  DIM_TIME_5M ||--o{ FACT_CITYDATA_POP       : "time-bucket (옵션)"
-  DIM_TIME_5M ||--o{ FACT_CITYDATA_COMMERCE  : "time-bucket (옵션)"
-  DIM_TIME_5M ||--o{ FACT_CITYDATA_ROAD      : "time-bucket (옵션)"
-  DIM_TIME_5M ||--o{ FACT_CITYDATA_TRANSIT   : "time-bucket (옵션)"
-  DIM_TIME_5M ||--o{ FACT_CITYDATA_WEATHER   : "time-bucket (옵션)"
-
-  FACT_CITYDATA_POP     ||..|| MART_MV_POP_LATEST    : "latest per poi"
-  FACT_CITYDATA_COMMERCE||..|| MART_MV_COMM_LATEST   : "latest per poi"
-  FACT_CITYDATA_ROAD    ||..|| MART_MV_ROAD_LATEST   : "latest per poi"
-
-  CORE_POI ||--o{ ML_POPULATION_FORECAST_5M  : "predicts-for"
+  %% ML inference
+  W --> L[AWS Lambda LightGBM]
+  L --> W
 
 ```
+
 
 
 
